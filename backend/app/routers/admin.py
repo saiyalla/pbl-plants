@@ -48,9 +48,10 @@ from app.schemas import (
     ShippingQuoteResult,
     StatusUpdate,
 )
-from app.services.notify import rupees
+from app.routers.payments import mark_paid
+from app.services.notify import notify_team, rupees
 from app.services.orders import get_delivery_settings
-from app.services.payments import PaymentGatewayError, create_payment_link
+from app.services.payments import PaymentGatewayError, create_payment_link, get_payment_link_status
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "products"
 ALLOWED_IMAGE_TYPES = {
@@ -187,6 +188,35 @@ def set_shipping_quote(
         whatsapp_url=f"https://wa.me/91{order.phone}?text={quote(message)}",
         message=message,
     )
+
+
+@router.post("/orders/{order_id}/refresh-payment", response_model=AdminOrderOut)
+def refresh_payment_link_status(
+    order_id: int, db: Session = Depends(get_db), settings: Settings = Depends(get_settings)
+):
+    """Manual fallback for when the webhook hasn't (or can't) reach us — e.g. testing a
+    Payment Link against a local server with no public URL. Asks Razorpay directly instead."""
+    order = db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(404, "Order not found.")
+    if not order.razorpay_payment_link_id:
+        raise HTTPException(409, "This order has no payment link yet.")
+    if order.payment_status == PaymentStatus.paid:
+        return order
+
+    try:
+        result = get_payment_link_status(
+            link_id=order.razorpay_payment_link_id,
+            key_id=settings.razorpay_key_id,
+            key_secret=settings.razorpay_key_secret,
+        )
+    except PaymentGatewayError as e:
+        raise HTTPException(502, f"Couldn't check the payment link: {e}") from None
+
+    if result["status"] == "paid" and result["payment_id"] and mark_paid(db, order, result["payment_id"]):
+        notify_team(order, "New PAID order")
+    db.refresh(order)
+    return order
 
 
 @router.get("/products", response_model=list[ProductOut])

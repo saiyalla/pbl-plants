@@ -194,6 +194,20 @@ function Orders({ token }: { token: string }) {
     return () => window.clearInterval(t);
   }, [load]);
 
+  async function refreshPayment(o: AdminOrder) {
+    setBusyId(o.id);
+    try {
+      const updated = await api<AdminOrder>(`/api/admin/orders/${o.id}/refresh-payment`, { method: "POST", token });
+      setOrders((list) => list.map((x) => (x.id === o.id ? updated : x)));
+      if (updated.payment_status !== "paid") setError("Razorpay says this link hasn't been paid yet.");
+      else setError(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't check the payment link.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function move(o: AdminOrder, to: OrderStatus) {
     if (to === "cancelled" && !window.confirm(`Cancel order ${o.public_id}?`)) return;
     setBusyId(o.id);
@@ -274,6 +288,9 @@ function Orders({ token }: { token: string }) {
                           Resend on WhatsApp
                         </a>
                         <a className="btn ghost" href={o.razorpay_payment_link_url} target="_blank" rel="noopener">Open payment link</a>
+                        <button className="btn ghost" disabled={busyId === o.id} onClick={() => refreshPayment(o)}>
+                          {busyId === o.id ? "Checking…" : "Check payment status"}
+                        </button>
                       </div>
                     )}
                   </div>

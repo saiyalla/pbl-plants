@@ -90,6 +90,38 @@ def test_shipping_quote_creates_payment_link_for_out_of_zone_order(client, admin
     assert "https://rzp.io/i/test" in unquote(body["whatsapp_url"])
 
 
+def test_refresh_payment_pulls_paid_status_from_razorpay(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        admin_router, "create_payment_link", lambda **kw: {"id": "plink_TEST", "short_url": "https://rzp.io/i/test"}
+    )
+    client.post("/api/orders", json=order_payload(client, pincode="500081", payment_method="online"))
+    oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
+    client.post(f"/api/admin/orders/{oid}/shipping-quote", json={"shipping_fee_paise": 15000}, headers=admin_headers)
+
+    monkeypatch.setattr(
+        admin_router, "get_payment_link_status", lambda **kw: {"status": "paid", "payment_id": "pay_PULLED"}
+    )
+    res = client.post(f"/api/admin/orders/{oid}/refresh-payment", headers=admin_headers)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["payment_status"] == "paid"
+    assert body["razorpay_payment_id"] == "pay_PULLED"
+
+
+def test_refresh_payment_leaves_order_unpaid_when_still_unpaid(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        admin_router, "create_payment_link", lambda **kw: {"id": "plink_TEST", "short_url": "https://rzp.io/i/test"}
+    )
+    client.post("/api/orders", json=order_payload(client, pincode="500081", payment_method="online"))
+    oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
+    client.post(f"/api/admin/orders/{oid}/shipping-quote", json={"shipping_fee_paise": 15000}, headers=admin_headers)
+
+    monkeypatch.setattr(admin_router, "get_payment_link_status", lambda **kw: {"status": "created", "payment_id": None})
+    res = client.post(f"/api/admin/orders/{oid}/refresh-payment", headers=admin_headers)
+    assert res.status_code == 200
+    assert res.json()["payment_status"] == "pending"
+
+
 def test_shipping_quote_rejected_for_in_zone_order(client, admin_headers):
     client.post("/api/orders", json=order_payload(client))  # normal Vizag COD order
     oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
