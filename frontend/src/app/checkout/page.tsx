@@ -38,6 +38,15 @@ function loadRazorpay(): Promise<boolean> {
   });
 }
 
+/** Razorpay's `prefill.contact` needs a clean "+91XXXXXXXXXX" — anything else (spaces, a
+ * leading 0, no country code) is silently dropped and Checkout asks the customer to type
+ * their number in again, even though we already collected it. */
+function razorpayContact(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  const last10 = digits.slice(-10);
+  return /^[6-9]\d{9}$/.test(last10) ? `+91${last10}` : "";
+}
+
 type Delivery = {
   state: "idle" | "checking" | "ok" | "no";
   feePaise: number;
@@ -241,7 +250,7 @@ export default function CheckoutPage() {
       currency: rp.currency,
       name: "PBL Plants",
       description: `Order ${created.order.public_id}`,
-      prefill: { name: form.customer_name, contact: form.phone },
+      prefill: { name: form.customer_name, contact: razorpayContact(form.phone) },
       theme: { color: "#2E5233" },
       handler: async (resp: RazorpayResponse) => {
         setBusy(true);
