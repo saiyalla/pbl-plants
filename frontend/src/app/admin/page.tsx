@@ -1185,7 +1185,7 @@ function Coupons({ token }: { token: string }) {
                     </div>
                     <div className="muted" style={{ fontSize: "0.78rem" }}>Last active {timeAgo(d.updated_at)}</div>
                   </div>
-                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", flexWrap: "wrap" }}>
                     <button type="button" className="pill-btn outline" onClick={() => dismissDraft(d)}>Dismiss</button>
                     <button type="button" className="pill-btn" disabled={recoveringId === d.id} onClick={() => recoverDraft(d)}>
                       {recoveringId === d.id ? "Generating…" : sent ? "Regenerate coupon" : "Generate recovery coupon"}
