@@ -1,4 +1,5 @@
 import { Catalog } from "@/components/Catalog";
+import { FaqList } from "@/components/Faq";
 import { Icon } from "@/components/Icons";
 import { fetchOffers, fetchProducts, rupees, SHOP, whatsappLink } from "@/lib/api";
 
@@ -31,6 +32,9 @@ export default async function Home() {
         <span className="hero-leaf a" aria-hidden="true"><Icon name="leaf" /></span>
         <span className="hero-leaf b" aria-hidden="true"><Icon name="leaf" /></span>
         <span className="hero-leaf c" aria-hidden="true"><Icon name="leaf" /></span>
+        <span className="hero-plant d" aria-hidden="true"><Icon name="succulent" /></span>
+        <span className="hero-plant e" aria-hidden="true"><Icon name="pot-ceramic" /></span>
+        <span className="hero-plant f" aria-hidden="true"><Icon name="pot-plastic" /></span>
         <div>
           <p className="eyebrow">Visakhapatnam&apos;s neighbourhood indoor plant store</p>
           <h1>Bring more green<br />into your home.</h1>
@@ -49,7 +53,12 @@ export default async function Home() {
             <span>5.0 rated on Google</span>
           </div>
         </div>
-        <div className="hero-art"><Icon name="logo" /></div>
+        <div className="hero-art">
+          <span className="logo-frame lg">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.jpg" alt="PBL Plants" />
+          </span>
+        </div>
       </section>
 
       {offers.length > 0 && (
@@ -98,20 +107,13 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="faq" className="section">
+      <section id="faq" className="section faq-section">
         <div className="section-head">
           <p className="eyebrow">Good to know</p>
           <h2>Frequently asked questions</h2>
         </div>
-        <p className="muted" style={{ fontSize: "0.85rem", marginTop: "-0.8rem" }}>Hover a question to see the answer.</p>
-        <div className="faq-grid">
-          {FAQS.map((f) => (
-            <div className="faq-card" key={f.q} tabIndex={0}>
-              <h3>{f.q}</h3>
-              <p className="faq-answer">{f.a}</p>
-            </div>
-          ))}
-        </div>
+        <p className="faq-hint" style={{ fontSize: "0.85rem", marginTop: "-0.8rem" }}>Hover a question to see the answer.</p>
+        <FaqList items={FAQS} />
       </section>
 
       <section id="reviews" className="section">
