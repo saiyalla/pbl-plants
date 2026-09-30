@@ -289,9 +289,36 @@ button { font: inherit; color: inherit; }
 .offer-card svg { width: 2.2rem; height: 2.2rem; color: var(--accent); flex-shrink: 0; }
 .offer-card p { margin: 0; font-size: 0.95rem; }
 .offer-card strong { color: var(--accent); }
-.review-cta { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; background: var(--accent-soft); border-radius: 14px; padding: 1.1rem 1.3rem; }
-.review-cta .stars { font-size: 1.6rem; color: var(--accent); letter-spacing: 0.1em; }
-.review-cta p { margin: 0; flex: 1; min-width: 220px; }
+.faq-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+.faq-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1.2rem 1.3rem;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+.faq-card:hover, .faq-card:focus-visible { border-color: var(--green); box-shadow: var(--shadow); transform: translateY(-2px); outline: none; }
+.faq-card h3 { font-size: 0.98rem; margin: 0; }
+.faq-answer {
+  margin: 0; color: var(--ink-soft); font-size: 0.88rem; line-height: 1.55;
+  max-height: 0; opacity: 0; overflow: hidden; transition: max-height 0.35s ease, opacity 0.3s ease, margin-top 0.3s ease;
+}
+.faq-card:hover .faq-answer, .faq-card:focus-visible .faq-answer, .faq-card:focus-within .faq-answer {
+  max-height: 12rem; opacity: 1; margin-top: 0.6rem;
+}
+
+.review-cta {
+  display: flex; align-items: center; justify-content: space-between; gap: 1.2rem; flex-wrap: wrap;
+  background: linear-gradient(135deg, var(--accent-soft), color-mix(in srgb, var(--accent) 6%, var(--surface)));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 18px; padding: 1.5rem 1.7rem; box-shadow: var(--shadow);
+}
+.review-left { display: flex; align-items: center; gap: 1rem; }
+.review-cta .stars-badge {
+  width: 3.4rem; height: 3.4rem; border-radius: 50%; background: var(--surface); display: grid; place-items: center;
+  box-shadow: var(--shadow); flex-shrink: 0; font-size: 1.5rem; color: var(--accent);
+}
+.review-rating { margin: 0; font-family: var(--font-display); font-size: 1.3rem; font-weight: 600; display: flex; align-items: baseline; gap: 0.5rem; }
+.review-cta .stars { font-size: 1rem; color: var(--accent); letter-spacing: 0.08em; }
+.review-text { margin: 0.2rem 0 0; color: var(--ink-soft); font-size: 0.92rem; max-width: 46ch; }
+@media (max-width: 560px) { .review-cta { justify-content: center; text-align: center; } .review-left { flex-direction: column; } }
 .visit-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 2rem; align-items: stretch; }
 .visit-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem;

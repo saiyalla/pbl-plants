@@ -13,6 +13,15 @@ const CARE_NOTES = [
   { title: "Pests", text: "White fuzz or sticky leaves are usually mealybugs or aphids. A wipe-down with diluted neem oil sorts out most cases within a week." },
 ];
 
+const FAQS = [
+  { q: "Do you deliver outside Visakhapatnam?", a: "Right now we only deliver within Vizag, using our own delivery team. Enter your pincode at checkout to check — if we can't reach you yet, message us on WhatsApp and we'll try to help." },
+  { q: "What payment methods do you accept?", a: "Cash on delivery for addresses close to the store, and online payment (cards, UPI, netbanking, wallets via Razorpay) for everyone else — checkout shows exactly which options apply to your address." },
+  { q: "How do I track my order?", a: "Use the order code from your confirmation plus the mobile number you ordered with on the Track order page — you'll see live status from placed through to delivered." },
+  { q: "What if my plant arrives damaged?", a: "Plants are living things, so please check your order when it arrives. Tell the delivery person or message us a photo the same day and we'll replace it or refund you." },
+  { q: "Can I cancel an order?", a: "Yes — call or message us any time before it leaves the shop. Once it's out for delivery, cash-on-delivery orders can still be refused at the door if needed." },
+  { q: "Do you do bulk or gifting orders?", a: "Absolutely — for large quantities or a custom gift box, message us on WhatsApp with what you need and we'll sort out pricing and packing." },
+];
+
 export default async function Home() {
   const [products, offers] = await Promise.all([fetchProducts(), fetchOffers()]);
 
@@ -89,10 +98,31 @@ export default async function Home() {
         </div>
       </section>
 
+      <section id="faq" className="section">
+        <div className="section-head">
+          <p className="eyebrow">Good to know</p>
+          <h2>Frequently asked questions</h2>
+        </div>
+        <p className="muted" style={{ fontSize: "0.85rem", marginTop: "-0.8rem" }}>Hover a question to see the answer.</p>
+        <div className="faq-grid">
+          {FAQS.map((f) => (
+            <div className="faq-card" key={f.q} tabIndex={0}>
+              <h3>{f.q}</h3>
+              <p className="faq-answer">{f.a}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section id="reviews" className="section">
         <div className="review-cta">
-          <span className="stars" aria-hidden="true">★★★★★</span>
-          <p><strong>Rated 5.0 on Google.</strong> Bought from us? A quick review helps other plant lovers in Vizag find the shop.</p>
+          <div className="review-left">
+            <span className="stars-badge" aria-hidden="true">★</span>
+            <div>
+              <p className="review-rating">5.0 <span className="stars" aria-hidden="true">★★★★★</span></p>
+              <p className="review-text">Rated on Google — bought from us? A quick review helps other plant lovers in Vizag find the shop.</p>
+            </div>
+          </div>
           <a className="btn primary" href={SHOP.mapsUrl} target="_blank" rel="noopener">Leave a review</a>
         </div>
       </section>
