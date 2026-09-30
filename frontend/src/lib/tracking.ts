@@ -49,3 +49,23 @@ export function clearCheckoutDraft() {
     /* ignore */
   }
 }
+
+/** Whether the team is currently signed into /admin this browser session — lets the site
+ * offer a "Dashboard" shortcut instead of making them retype the URL after clicking the logo. */
+const ADMIN_TOKEN_KEY = "pbl-admin-token";
+
+export function readAdminToken(): string {
+  try {
+    return window.sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveAdminToken(token: string) {
+  try {
+    token ? window.sessionStorage.setItem(ADMIN_TOKEN_KEY, token) : window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}

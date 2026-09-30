@@ -24,6 +24,7 @@ import {
   rupees,
   uploadProductImage,
 } from "@/lib/api";
+import { readAdminToken, saveAdminToken } from "@/lib/tracking";
 
 // Keep in sync with CATEGORIES in components/Catalog.tsx.
 const CATEGORY_OPTIONS = ["bamboo", "foliage", "succulent", "gift", "pots", "decor"];
@@ -40,8 +41,6 @@ function ImagePlaceholder() {
     </div>
   );
 }
-
-const TOKEN_KEY = "pbl-admin-token";
 
 // Mirrors ALLOWED_TRANSITIONS in the backend.
 const NEXT_STEP: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
@@ -60,27 +59,20 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   cancelled: "Cancelled",
 };
 
-function readToken() {
-  try { return window.sessionStorage.getItem(TOKEN_KEY) ?? ""; } catch { return ""; }
-}
-function saveToken(t: string) {
-  try { t ? window.sessionStorage.setItem(TOKEN_KEY, t) : window.sessionStorage.removeItem(TOKEN_KEY); } catch {}
-}
-
 export default function AdminPage() {
   const [token, setToken] = useState("");
   const [draft, setDraft] = useState("");
   const [tab, setTab] = useState<"orders" | "products" | "offers" | "delivery" | "coupons">("orders");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => setToken(readToken()), []);
+  useEffect(() => setToken(readAdminToken()), []);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     try {
       await api("/api/admin/orders?limit=1", { token: draft });
-      saveToken(draft);
+      saveAdminToken(draft);
       setToken(draft);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't sign in.");
@@ -115,7 +107,7 @@ export default function AdminPage() {
             <button aria-pressed={tab === "delivery"} onClick={() => setTab("delivery")}>Delivery</button>
             <button aria-pressed={tab === "coupons"} onClick={() => setTab("coupons")}>Coupons</button>
           </div>
-          <button className="btn ghost" onClick={() => { saveToken(""); setToken(""); }}>Sign out</button>
+          <button className="btn ghost" onClick={() => { saveAdminToken(""); setToken(""); }}>Sign out</button>
         </div>
       </div>
       {tab === "orders" ? <Orders token={token} />

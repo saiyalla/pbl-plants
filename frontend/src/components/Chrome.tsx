@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { SHOP, whatsappLink } from "@/lib/api";
 import { useCart } from "@/lib/cart";
+import { readAdminToken } from "@/lib/tracking";
 import { Icon } from "./Icons";
 
 const TICKER =
@@ -21,6 +24,13 @@ export function Ticker() {
 
 export function Nav() {
   const { count, open } = useCart();
+  const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Re-checked on every navigation (not just once on mount) so that after signing into /admin
+  // and then clicking away — e.g. the logo — the nav already knows to offer a way back.
+  useEffect(() => setIsAdmin(!!readAdminToken()), [pathname]);
+
   return (
     <nav className="nav" aria-label="Main">
       <div className="wrap row">
@@ -36,6 +46,9 @@ export function Nav() {
           <li className="hide-sm"><Link href="/#care">Care notes</Link></li>
           <li className="hide-sm"><Link href="/#visit">Visit</Link></li>
           <li><Link href="/track">Track order</Link></li>
+          {isAdmin && pathname !== "/admin" && (
+            <li><Link href="/admin">Dashboard</Link></li>
+          )}
           <li>
             <button className="cart-btn" onClick={open} aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}>
               <Icon name="bag" />
