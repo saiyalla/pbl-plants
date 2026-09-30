@@ -52,7 +52,7 @@ export default async function Home() {
         </div>
         <div className="hero-art">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.jpg" alt="PBL Plants" />
+          <img src="/logo.png" alt="PBL Plants" />
         </div>
       </section>
 
