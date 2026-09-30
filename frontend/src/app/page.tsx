@@ -19,6 +19,9 @@ export default async function Home() {
   return (
     <div className="wrap">
       <section className="hero">
+        <span className="hero-leaf a" aria-hidden="true"><Icon name="leaf" /></span>
+        <span className="hero-leaf b" aria-hidden="true"><Icon name="leaf" /></span>
+        <span className="hero-leaf c" aria-hidden="true"><Icon name="leaf" /></span>
         <div>
           <p className="eyebrow">Visakhapatnam&apos;s neighbourhood indoor plant store</p>
           <h1>Bring more green<br />into your home.</h1>
