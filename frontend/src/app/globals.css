@@ -414,11 +414,10 @@ button { font: inherit; color: inherit; }
 /* ---------- admin ---------- */
 .admin-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: space-between; margin-bottom: 1.2rem; }
 .tabs {
-  display: inline-flex; gap: 0.3rem; background: var(--surface-2); padding: 0.25rem; border-radius: 999px;
-  max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  display: flex; flex-wrap: wrap; gap: 0.3rem; background: var(--surface-2); padding: 0.25rem; border-radius: 14px;
+  max-width: 100%;
 }
-.tabs::-webkit-scrollbar { display: none; }
-.tabs button { border: 0; background: transparent; padding: 0.45rem 0.95rem; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--ink-soft); flex-shrink: 0; white-space: nowrap; }
+.tabs button { border: 0; background: transparent; padding: 0.45rem 0.95rem; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--ink-soft); white-space: nowrap; }
 .tabs button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
 .filter-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 0.3rem 0.75rem; font-size: 0.8rem; cursor: pointer; }
