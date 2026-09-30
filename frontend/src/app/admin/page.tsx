@@ -22,6 +22,7 @@ import {
   type Product,
   type ProductCreate,
   rupees,
+  type ShippingQuoteResult,
   uploadProductImage,
 } from "@/lib/api";
 import { readAdminToken, saveAdminToken } from "@/lib/tracking";
@@ -116,6 +117,62 @@ export default function AdminPage() {
   );
 }
 
+/** Mirrors the message the backend builds when a shipping quote is created — used to rebuild
+ * the WhatsApp link after a page reload, once the server's own one-time message is gone. */
+function courierWhatsappMessage(o: AdminOrder): string {
+  const first = o.customer_name.split(" ")[0];
+  const courierBit = o.shipping_courier ? ` via ${o.shipping_courier}` : "";
+  return `Hi ${first}, your PBL Plants order ${o.public_id} is ready to ship${courierBit}. Parcel + shipping total: ${rupees(o.total_paise)}. Pay here to dispatch: ${o.razorpay_payment_link_url}`;
+}
+
+function ShippingQuoteForm({ order, token, onDone }: { order: AdminOrder; token: string; onDone: (o: AdminOrder) => void }) {
+  const [courier, setCourier] = useState("");
+  const [fee, setFee] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    const paise = Math.round(parseFloat(fee) * 100);
+    if (!Number.isFinite(paise) || paise < 0) {
+      setErr("Enter a valid shipping charge.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const result = await api<ShippingQuoteResult>(`/api/admin/orders/${order.id}/shipping-quote`, {
+        method: "POST", token, body: JSON.stringify({ shipping_fee_paise: paise, courier: courier.trim() || null }),
+      });
+      onDone(result.order);
+      window.open(result.whatsapp_url, "_blank");
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Couldn't create the payment link.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="quote-form" onSubmit={create}>
+      {err && <div className="alert error" style={{ fontSize: "0.82rem" }}>{err}</div>}
+      <div className="field-row">
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>Courier (optional)</label>
+          <input placeholder="DTDC / RTC" value={courier} onChange={(e) => setCourier(e.target.value)} />
+        </div>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>Shipping charge (₹)</label>
+          <input type="number" min="0" step="1" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} required />
+        </div>
+      </div>
+      <button className="btn primary" disabled={busy} style={{ marginTop: "0.6rem" }}>
+        {busy ? "Creating link…" : "Create payment link & message customer"}
+      </button>
+    </form>
+  );
+}
+
 function Orders({ token }: { token: string }) {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [filter, setFilter] = useState<"active" | OrderStatus | "all">("active");
@@ -184,6 +241,7 @@ function Orders({ token }: { token: string }) {
                     <span className="order-code">{o.public_id}</span>
                     <span className="tag">{STATUS_LABEL[o.status]}</span>
                     <span className={`tag ${payTag}`}>{PAYMENT_LABEL[o.payment_status]}</span>
+                    {o.out_of_zone && <span className="tag warn">Courier</span>}
                   </div>
                   <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{rupees(o.total_paise)}</div>
                 </div>
@@ -199,11 +257,34 @@ function Orders({ token }: { token: string }) {
                   {o.items.map((i) => <li key={i.product_name}>{i.quantity} × {i.product_name} — {rupees(i.line_total_paise)}</li>)}
                 </ul>
                 {o.notes && <p style={{ margin: "0.6rem 0 0", fontSize: "0.88rem" }}><strong>Note:</strong> {o.notes}</p>}
+                {o.out_of_zone && o.payment_status !== "paid" && (
+                  <div className="courier-box">
+                    {!o.razorpay_payment_link_url ? (
+                      <ShippingQuoteForm
+                        order={o}
+                        token={token}
+                        onDone={(updated) => setOrders((list) => list.map((x) => (x.id === updated.id ? updated : x)))}
+                      />
+                    ) : (
+                      <div className="quote-sent">
+                        <span className="muted" style={{ fontSize: "0.85rem" }}>
+                          Payment link sent{o.shipping_courier ? ` (${o.shipping_courier})` : ""} — {rupees(o.total_paise)} total.
+                        </span>
+                        <a className="btn ghost" href={`https://wa.me/91${o.phone}?text=${encodeURIComponent(courierWhatsappMessage(o))}`} target="_blank" rel="noopener">
+                          Resend on WhatsApp
+                        </a>
+                        <a className="btn ghost" href={o.razorpay_payment_link_url} target="_blank" rel="noopener">Open payment link</a>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="order-actions">
                   {next && !unpaidOnline && (
                     <button className="btn primary" disabled={busyId === o.id} onClick={() => move(o, next.to)}>{next.label}</button>
                   )}
-                  {unpaidOnline && o.status === "placed" && <span className="muted" style={{ fontSize: "0.85rem", alignSelf: "center" }}>Waiting for online payment…</span>}
+                  {unpaidOnline && o.status === "placed" && !o.out_of_zone && (
+                    <span className="muted" style={{ fontSize: "0.85rem", alignSelf: "center" }}>Waiting for online payment…</span>
+                  )}
                   {!["delivered", "cancelled"].includes(o.status) && (
                     <button className="btn ghost" disabled={busyId === o.id} onClick={() => move(o, "cancelled")}>Cancel</button>
                   )}

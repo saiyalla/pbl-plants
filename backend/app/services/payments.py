@@ -57,3 +57,43 @@ def create_razorpay_order(
     if resp.status_code >= 400:
         raise PaymentGatewayError(f"Razorpay rejected the order ({resp.status_code}): {resp.text[:300]}")
     return resp.json()["id"]
+
+
+def create_payment_link(
+    *,
+    amount_paise: int,
+    description: str,
+    customer_name: str,
+    customer_phone: str,
+    reference_id: str,
+    key_id: str,
+    key_secret: str,
+    client: httpx.Client | None = None,
+) -> dict:
+    """Create a Razorpay Payment Link and return its id + shareable URL.
+
+    Used for out-of-zone orders, where the amount (cart + courier charge) is only known after
+    checkout — a hosted link lets the customer pay it later instead of at the normal Checkout.
+    """
+    payload = {
+        "amount": amount_paise,
+        "currency": "INR",
+        "description": description,
+        "customer": {"name": customer_name, "contact": f"+91{customer_phone}"},
+        "notify": {"sms": False, "email": False},  # sent manually via WhatsApp, not Razorpay's own notifications
+        "reminder_enable": False,
+        "reference_id": reference_id,
+    }
+    own_client = client is None
+    client = client or httpx.Client(timeout=15)
+    try:
+        resp = client.post(f"{RAZORPAY_API}/payment_links", json=payload, auth=(key_id, key_secret))
+    except httpx.HTTPError as exc:
+        raise PaymentGatewayError(f"Could not reach Razorpay: {exc}") from exc
+    finally:
+        if own_client:
+            client.close()
+    if resp.status_code >= 400:
+        raise PaymentGatewayError(f"Razorpay rejected the payment link ({resp.status_code}): {resp.text[:300]}")
+    data = resp.json()
+    return {"id": data["id"], "short_url": data["short_url"]}

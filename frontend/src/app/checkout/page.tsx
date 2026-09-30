@@ -124,8 +124,10 @@ export default function CheckoutPage() {
             state: r.deliverable ? "ok" : "no", feePaise: r.delivery_fee_paise, baseFeePaise: r.base_fee_paise,
             freeDeliveryMinPaise: r.free_delivery_min_paise, distanceKm: r.distance_km, codAllowed: r.cod_allowed,
           });
-          if (r.deliverable && !r.cod_allowed) setMethod("online");
-          else if (r.deliverable && r.cod_allowed) setMethod("cod");
+          // Outside our own delivery zones: courier only, so cash on delivery is never an option.
+          if (!r.deliverable) setMethod("online");
+          else if (!r.cod_allowed) setMethod("online");
+          else setMethod("cod");
         })
         .catch(() => setDelivery(IDLE_DELIVERY));
     }, 300);
@@ -269,8 +271,8 @@ export default function CheckoutPage() {
     e.preventDefault();
     setError(null);
     if (!validate()) return;
-    if (delivery.state !== "ok") {
-      setError("We don't deliver to that pincode yet — message us on WhatsApp and we'll try to help.");
+    if (delivery.state !== "ok" && delivery.state !== "no") {
+      setError("Enter your pincode to continue.");
       return;
     }
     setBusy(true);
@@ -340,7 +342,9 @@ export default function CheckoutPage() {
                   ✓ We deliver here{delivery.distanceKm != null ? ` · ${delivery.distanceKm} km away` : ""}
                 </span>
               )}
-              {!fieldErrors.pincode && delivery.state === "no" && <span className="hint bad">Outside our delivery area</span>}
+              {!fieldErrors.pincode && delivery.state === "no" && (
+                <span className="hint">Outside our delivery zone — we&apos;ll ship this by courier</span>
+              )}
             </div>
           </div>
           <div className={fieldClass(fieldErrors.address)}>
@@ -353,45 +357,73 @@ export default function CheckoutPage() {
             <textarea id="notes" rows={2} maxLength={500} placeholder="e.g. 3-layer bamboo please, gift wrap, call before coming" value={form.notes} onChange={set("notes")} />
           </div>
 
-          {delivery.state !== "ok" ? (
+          {delivery.state !== "ok" && delivery.state !== "no" ? (
             <div className="alert info" style={{ marginTop: "1.2rem" }}>
               Enter your pincode above to see delivery &amp; payment options.
             </div>
           ) : (
             <>
               <h2 style={{ marginTop: "1.4rem" }}>Payment</h2>
-              {!delivery.codAllowed && (
+              {delivery.state === "no" ? (
                 <p className="muted" style={{ fontSize: "0.85rem", marginTop: "-0.4rem" }}>
-                  Cash on delivery isn&apos;t available this far — please pay online for this address.
+                  This address is outside our local delivery zone — we ship it by courier (DTDC/RTC) and
+                  confirm the exact shipping charge after you order.
                 </p>
+              ) : (
+                !delivery.codAllowed && (
+                  <p className="muted" style={{ fontSize: "0.85rem", marginTop: "-0.4rem" }}>
+                    Cash on delivery isn&apos;t available this far — please pay online for this address.
+                  </p>
+                )
               )}
               <div className="pay-options">
-                <label className={`pay-option${delivery.codAllowed ? "" : " disabled"}`}>
-                  <input type="radio" name="pay" disabled={!delivery.codAllowed} checked={method === "cod"} onChange={() => setMethod("cod")} />
-                  <div><strong>Cash on delivery</strong><span>Pay cash or UPI to our delivery team at your door.</span></div>
-                </label>
+                {delivery.state !== "no" && (
+                  <label className={`pay-option${delivery.codAllowed ? "" : " disabled"}`}>
+                    <input type="radio" name="pay" disabled={!delivery.codAllowed} checked={method === "cod"} onChange={() => setMethod("cod")} />
+                    <div><strong>Cash on delivery</strong><span>Pay cash or UPI to our delivery team at your door.</span></div>
+                  </label>
+                )}
                 <label className={`pay-option${onlineEnabled ? "" : " disabled"}`}>
                   <input type="radio" name="pay" disabled={!onlineEnabled} checked={method === "online"} onChange={() => setMethod("online")} />
                   <div>
                     <strong>Pay online</strong>
-                    <span>{onlineEnabled ? "UPI, cards and netbanking via Razorpay." : "Coming soon."}</span>
+                    <span>
+                      {!onlineEnabled
+                        ? "Coming soon."
+                        : delivery.state === "no"
+                          ? "We'll send a secure payment link once shipping is confirmed."
+                          : "UPI, cards and netbanking via Razorpay."}
+                    </span>
                   </div>
                 </label>
               </div>
 
-              {!delivery.codAllowed && !onlineEnabled ? (
+              {(delivery.state === "no" ? !onlineEnabled : !delivery.codAllowed && !onlineEnabled) ? (
                 <div className="alert error" style={{ marginTop: "1.2rem" }}>
-                  We can&apos;t take online payments yet, and cash on delivery isn&apos;t available this far.{" "}
-                  Message us on WhatsApp and we&apos;ll help you place the order.
+                  {delivery.state === "no"
+                    ? "This address needs a courier and online payment, and online payment isn't set up yet — message us on WhatsApp and we'll help."
+                    : "We can't take online payments yet, and cash on delivery isn't available this far. Message us on WhatsApp and we'll help you place the order."}
                 </div>
               ) : pending ? (
                 <button type="button" className="btn primary block" style={{ marginTop: "1.2rem" }} disabled={busy} onClick={() => pay(pending)}>
                   Try paying {rupees(pending.order.total_paise)} again
                 </button>
               ) : (
-                <button type="submit" className="btn primary block" style={{ marginTop: "1.2rem" }} disabled={busy || problems.length > 0}>
-                  {busy ? "Placing order…" : method === "online" ? `Pay ${rupees(total)}` : `Place order · ${rupees(total)}`}
-                </button>
+                <>
+                  <button type="submit" className="btn primary block" style={{ marginTop: "1.2rem" }} disabled={busy || problems.length > 0}>
+                    {busy
+                      ? "Placing order…"
+                      : delivery.state === "no"
+                        ? `Place order · ${rupees(total)} + shipping`
+                        : method === "online" ? `Pay ${rupees(total)}` : `Place order · ${rupees(total)}`}
+                  </button>
+                  {delivery.state === "no" && (
+                    <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.6rem" }}>
+                      We&apos;ll confirm the courier charge and send a secure payment link on WhatsApp before
+                      dispatch — nothing is charged yet.
+                    </p>
+                  )}
+                </>
               )}
             </>
           )}
@@ -459,7 +491,7 @@ export default function CheckoutPage() {
             <div className="sum-row">
               <span>Delivery</span>
               <span>
-                {delivery.state !== "ok" ? "—" : delivery.feePaise === 0 && delivery.baseFeePaise > 0 ? (
+                {delivery.state === "no" ? "Confirmed after ordering" : delivery.state !== "ok" ? "—" : delivery.feePaise === 0 && delivery.baseFeePaise > 0 ? (
                   <>
                     <span style={{ textDecoration: "line-through", opacity: 0.6, marginRight: "0.4rem" }}>
                       {rupees(delivery.baseFeePaise)}
@@ -469,7 +501,7 @@ export default function CheckoutPage() {
                 ) : delivery.feePaise ? rupees(delivery.feePaise) : "Free"}
               </span>
             </div>
-            <div className="sum-row total"><span>Total</span><span>{rupees(total)}</span></div>
+            <div className="sum-row total"><span>Total</span><span>{rupees(total)}{delivery.state === "no" ? " + shipping" : ""}</span></div>
           </div>
         </aside>
       </div>

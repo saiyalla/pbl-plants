@@ -126,6 +126,9 @@ class OrderOut(BaseModel):
     coupon_code: str | None
     discount_paise: int
     total_paise: int
+    out_of_zone: bool
+    shipping_courier: str | None
+    razorpay_payment_link_url: str | None
     items: list[OrderItemOut]
     created_at: datetime
 
@@ -140,6 +143,7 @@ class AdminOrderOut(OrderOut):
     notes: str
     razorpay_order_id: str | None
     razorpay_payment_id: str | None
+    razorpay_payment_link_id: str | None
     updated_at: datetime
 
 
@@ -190,6 +194,25 @@ class PaymentVerify(BaseModel):
 
 class StatusUpdate(BaseModel):
     status: OrderStatus
+
+
+class ShippingQuoteIn(BaseModel):
+    """Submitted from the admin panel once the team has a courier quote for an out-of-zone order."""
+
+    shipping_fee_paise: int = Field(ge=0)
+    courier: str | None = Field(default=None, max_length=40)
+
+    @field_validator("courier")
+    @classmethod
+    def strip(cls, v: str | None) -> str | None:
+        v = v.strip() if v else None
+        return v or None
+
+
+class ShippingQuoteResult(BaseModel):
+    order: AdminOrderOut
+    whatsapp_url: str
+    message: str
 
 
 class CodCollected(BaseModel):

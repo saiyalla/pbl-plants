@@ -144,6 +144,9 @@ export type Order = {
   coupon_code: string | null;
   discount_paise: number;
   total_paise: number;
+  out_of_zone: boolean;
+  shipping_courier: string | null;
+  razorpay_payment_link_url: string | null;
   items: OrderItem[];
   created_at: string;
 };
@@ -156,7 +159,14 @@ export type AdminOrder = Order & {
   notes: string;
   razorpay_order_id: string | null;
   razorpay_payment_id: string | null;
+  razorpay_payment_link_id: string | null;
   updated_at: string;
+};
+
+export type ShippingQuoteResult = {
+  order: AdminOrder;
+  whatsapp_url: string;
+  message: string;
 };
 
 export type OrderCreated = {

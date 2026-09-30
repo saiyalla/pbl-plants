@@ -44,9 +44,13 @@ from app.schemas import (
     ProductCreate,
     ProductOut,
     ProductUpdate,
+    ShippingQuoteIn,
+    ShippingQuoteResult,
     StatusUpdate,
 )
+from app.services.notify import rupees
 from app.services.orders import get_delivery_settings
+from app.services.payments import PaymentGatewayError, create_payment_link
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "products"
 ALLOWED_IMAGE_TYPES = {
@@ -126,6 +130,63 @@ def update_status(order_id: int, data: StatusUpdate, db: Session = Depends(get_d
     db.commit()
     db.refresh(order)
     return order
+
+
+@router.post("/orders/{order_id}/shipping-quote", response_model=ShippingQuoteResult)
+def set_shipping_quote(
+    order_id: int,
+    data: ShippingQuoteIn,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Once the team has a courier (DTDC/RTC) quote for an out-of-zone order, this sets the
+    shipping charge, creates a Razorpay Payment Link for cart + shipping, and hands back a
+    wa.me link pre-filled with the total and the link — sending it is still a manual click,
+    same as the checkout-draft recovery flow, until a WhatsApp Business API is wired up."""
+    order = db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(404, "Order not found.")
+    if not order.out_of_zone:
+        raise HTTPException(409, "This order isn't an out-of-zone courier order.")
+    if order.payment_status == PaymentStatus.paid:
+        raise HTTPException(409, "This order is already paid.")
+    if not settings.online_payments_enabled:
+        raise HTTPException(503, "Online payments aren't set up — add Razorpay keys first.")
+
+    order.delivery_fee_paise = data.shipping_fee_paise
+    order.shipping_courier = data.courier
+    order.total_paise = max(0, order.subtotal_paise - order.discount_paise) + order.delivery_fee_paise
+
+    try:
+        link = create_payment_link(
+            amount_paise=order.total_paise,
+            description=f"PBL Plants order {order.public_id}",
+            customer_name=order.customer_name,
+            customer_phone=order.phone,
+            reference_id=order.public_id,
+            key_id=settings.razorpay_key_id,
+            key_secret=settings.razorpay_key_secret,
+        )
+    except PaymentGatewayError as e:
+        raise HTTPException(502, f"Couldn't create the payment link: {e}") from None
+
+    order.razorpay_payment_link_id = link["id"]
+    order.razorpay_payment_link_url = link["short_url"]
+    order.payment_status = PaymentStatus.pending
+    db.commit()
+    db.refresh(order)
+
+    courier_bit = f" via {order.shipping_courier}" if order.shipping_courier else ""
+    message = (
+        f"Hi {order.customer_name.split(' ')[0]}, your PBL Plants order {order.public_id} is ready to "
+        f"ship{courier_bit}. Parcel + shipping total: {rupees(order.total_paise)}. "
+        f"Pay here to dispatch: {order.razorpay_payment_link_url}"
+    )
+    return ShippingQuoteResult(
+        order=AdminOrderOut.model_validate(order),
+        whatsapp_url=f"https://wa.me/91{order.phone}?text={quote(message)}",
+        message=message,
+    )
 
 
 @router.get("/products", response_model=list[ProductOut])

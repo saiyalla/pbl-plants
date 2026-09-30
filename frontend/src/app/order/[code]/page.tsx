@@ -68,12 +68,16 @@ export default function OrderPage() {
 
   const cancelled = order.status === "cancelled";
   const currentIndex = STATUS_STEPS.findIndex((s) => s.key === order.status);
-  const awaitingPayment = order.payment_method === "online" && order.payment_status !== "paid";
+  const awaitingQuote = order.out_of_zone && !order.razorpay_payment_link_url && order.payment_status !== "paid";
+  const awaitingLinkPayment = order.out_of_zone && !!order.razorpay_payment_link_url && order.payment_status !== "paid";
+  const awaitingPayment = !order.out_of_zone && order.payment_method === "online" && order.payment_status !== "paid";
 
   return (
     <div className="wrap page" style={{ maxWidth: 760 }}>
       <div className="page-head">
-        {isNew && !awaitingPayment && <div className="success-mark" aria-hidden="true">✓</div>}
+        {isNew && !awaitingPayment && !awaitingQuote && !awaitingLinkPayment && (
+          <div className="success-mark" aria-hidden="true">✓</div>
+        )}
         <p className="eyebrow">Order {order.public_id}</p>
         <h1>{isNew ? `Thank you, ${order.customer_name.split(" ")[0]}!` : "Your order"}</h1>
         {isNew && (
@@ -83,6 +87,27 @@ export default function OrderPage() {
           </p>
         )}
       </div>
+
+      {awaitingQuote && (
+        <div className="alert info">
+          This address is outside our local delivery zone, so we ship it by courier. We&apos;re checking the
+          exact parcel charge now and will message you on WhatsApp with the total and a secure payment link
+          before we dispatch — usually within a day. Questions?{" "}
+          <a href={whatsappLink(`Hi PBL Plants, about my order ${order.public_id}`)} target="_blank" rel="noopener">Message us</a>.
+        </div>
+      )}
+
+      {awaitingLinkPayment && (
+        <div className="alert info">
+          Your order is ready to ship{order.shipping_courier ? ` via ${order.shipping_courier}` : ""}! Pay{" "}
+          {rupees(order.total_paise)} to confirm dispatch.
+          <div style={{ marginTop: "0.6rem" }}>
+            <a className="btn primary" href={order.razorpay_payment_link_url!} target="_blank" rel="noopener">
+              Pay {rupees(order.total_paise)} now
+            </a>
+          </div>
+        </div>
+      )}
 
       {awaitingPayment && (
         <div className="alert info">
@@ -107,7 +132,9 @@ export default function OrderPage() {
             </ol>
           )}
           <p className="muted" style={{ fontSize: "0.85rem", marginTop: "1.2rem", marginBottom: 0 }}>
-            Our team delivers across Vizag and will call you before arriving.
+            {order.out_of_zone
+              ? `This order ships by courier${order.shipping_courier ? ` (${order.shipping_courier})` : ""}.`
+              : "Our team delivers across Vizag and will call you before arriving."}
           </p>
         </section>
 
@@ -120,7 +147,10 @@ export default function OrderPage() {
             </div>
           ))}
           <div style={{ borderTop: "1px solid var(--line)", marginTop: "0.6rem", paddingTop: "0.6rem", display: "grid", gap: "0.35rem" }}>
-            <div className="sum-row"><span>Delivery</span><span>{order.delivery_fee_paise ? rupees(order.delivery_fee_paise) : "Free"}</span></div>
+            <div className="sum-row">
+              <span>Delivery</span>
+              <span>{awaitingQuote ? "To be confirmed" : order.delivery_fee_paise ? rupees(order.delivery_fee_paise) : "Free"}</span>
+            </div>
             <div className="sum-row total"><span>Total</span><span>{rupees(order.total_paise)}</span></div>
             <div className="sum-row muted"><span>Payment</span><span>{PAYMENT_LABEL[order.payment_status]}</span></div>
           </div>

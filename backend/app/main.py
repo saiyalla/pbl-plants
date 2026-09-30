@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine
 from app.limiter import limiter
+from app.migrate import ensure_order_columns
 from app.routers import admin, orders, payments, products
 from app.seed import seed_if_empty
 
@@ -23,6 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 async def lifespan(_: FastAPI):
     # MVP: create tables on boot. Switch to Alembic migrations before the schema starts changing in prod.
     Base.metadata.create_all(engine)
+    ensure_order_columns(engine)
     with SessionLocal() as db:
         seed_if_empty(db)
     yield

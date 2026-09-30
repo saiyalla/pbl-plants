@@ -1,3 +1,6 @@
+from urllib.parse import unquote
+
+from app.routers import admin as admin_router
 from app.routers import orders as orders_router
 from tests.conftest import order_payload, product_id
 
@@ -62,3 +65,37 @@ def test_price_edit_does_not_change_past_orders(client, admin_headers):
     client.patch(f"/api/admin/products/{pid}", json={"price_paise": 25000}, headers=admin_headers)
     past = client.get("/api/admin/orders", headers=admin_headers).json()[0]
     assert past["items"][0]["unit_price_paise"] == 20000
+
+
+def test_shipping_quote_creates_payment_link_for_out_of_zone_order(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(
+        admin_router, "create_payment_link", lambda **kw: {"id": "plink_TEST", "short_url": "https://rzp.io/i/test"}
+    )
+    client.post("/api/orders", json=order_payload(client, pincode="500081", payment_method="online"))
+    oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
+
+    res = client.post(
+        f"/api/admin/orders/{oid}/shipping-quote",
+        json={"shipping_fee_paise": 15000, "courier": "DTDC"},
+        headers=admin_headers,
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["order"]["delivery_fee_paise"] == 15000
+    assert body["order"]["total_paise"] == 55000  # ₹400 cart + ₹150 shipping
+    assert body["order"]["shipping_courier"] == "DTDC"
+    assert body["order"]["razorpay_payment_link_id"] == "plink_TEST"
+    assert body["order"]["razorpay_payment_link_url"] == "https://rzp.io/i/test"
+    assert body["order"]["payment_status"] == "pending"
+    assert "https://rzp.io/i/test" in unquote(body["whatsapp_url"])
+
+
+def test_shipping_quote_rejected_for_in_zone_order(client, admin_headers):
+    client.post("/api/orders", json=order_payload(client))  # normal Vizag COD order
+    oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
+    res = client.post(
+        f"/api/admin/orders/{oid}/shipping-quote",
+        json={"shipping_fee_paise": 15000},
+        headers=admin_headers,
+    )
+    assert res.status_code == 409

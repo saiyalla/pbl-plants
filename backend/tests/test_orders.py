@@ -34,10 +34,22 @@ def test_duplicate_lines_are_merged(client):
     assert len(order["items"]) == 1 and order["items"][0]["quantity"] == 3
 
 
-def test_rejects_pincode_outside_delivery_area(client):
+def test_cod_rejected_outside_delivery_area(client):
     res = client.post("/api/orders", json=order_payload(client, pincode="500081"))
     assert res.status_code == 422
-    assert "don't deliver" in res.json()["detail"]
+    assert "courier" in res.json()["detail"]
+
+
+def test_out_of_zone_online_order_awaits_shipping_quote(client):
+    res = client.post("/api/orders", json=order_payload(client, pincode="500081", payment_method="online"))
+    assert res.status_code == 201, res.text
+    body = res.json()
+    order = body["order"]
+    assert order["out_of_zone"] is True
+    assert order["delivery_fee_paise"] == 0
+    assert order["total_paise"] == 40000  # cart only — shipping added later
+    assert order["payment_status"] == "pending"
+    assert body["razorpay"] is None  # amount isn't known yet, so no checkout is started
 
 
 def test_rejects_bad_phone(client):

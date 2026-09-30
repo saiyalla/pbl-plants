@@ -113,14 +113,28 @@ def build_order(db: Session, data: OrderCreate, settings: Settings) -> Order:
     # A rough subtotal (before we know exact line prices) is enough to check the free-delivery
     # threshold; it's recomputed exactly below once server-side prices are resolved.
     delivery = compute_delivery(db, data.pincode, subtotal_paise=0)
-    if not delivery.deliverable:
-        raise OrderError(
-            f"Sorry, we don't deliver to {data.pincode} yet. Message us on WhatsApp and we'll try to help."
-        )
-    if data.payment_method == PaymentMethod.cod and not delivery.cod_allowed:
-        raise OrderError("Cash on delivery isn't available this far — please pay online for this address.")
-    if data.payment_method == PaymentMethod.online and not settings.online_payments_enabled:
-        raise OrderError("Online payment isn't available right now — please choose Cash on Delivery.", 503)
+    # Pincodes outside our own delivery zones aren't refused — they're shipped by courier
+    # (DTDC/RTC) instead. The exact parcel charge only comes once the team gets a courier
+    # quote, so it can't be collected at checkout: COD is impossible (no team visit to collect
+    # cash) and online payment for the balance happens later via a link sent after packing.
+    out_of_zone = not delivery.deliverable
+    if out_of_zone:
+        if data.payment_method != PaymentMethod.online:
+            raise OrderError(
+                "Cash on delivery isn't available for this pincode — we ship it by courier instead. "
+                "Choose online payment and we'll confirm the exact shipping charge before dispatch."
+            )
+        if not settings.online_payments_enabled:
+            raise OrderError(
+                "Shipping this address needs a courier and online payment, and online payment isn't "
+                "set up yet — message us on WhatsApp and we'll help.",
+                503,
+            )
+    else:
+        if data.payment_method == PaymentMethod.cod and not delivery.cod_allowed:
+            raise OrderError("Cash on delivery isn't available this far — please pay online for this address.")
+        if data.payment_method == PaymentMethod.online and not settings.online_payments_enabled:
+            raise OrderError("Online payment isn't available right now — please choose Cash on Delivery.", 503)
 
     # Merge duplicate lines for the same product.
     qty_by_product: dict[int, int] = {}
@@ -158,8 +172,9 @@ def build_order(db: Session, data: OrderCreate, settings: Settings) -> Order:
     if subtotal < settings.min_order_paise:
         raise OrderError(f"Minimum order is ₹{settings.min_order_paise // 100}.")
 
-    # Recompute with the real subtotal — the free-delivery threshold depends on it.
-    fee = compute_delivery(db, data.pincode, subtotal).fee_paise
+    # Recompute with the real subtotal — the free-delivery threshold depends on it. Out-of-zone
+    # orders have no fee yet; the team adds one once they have a courier quote.
+    fee = 0 if out_of_zone else compute_delivery(db, data.pincode, subtotal).fee_paise
 
     discount = 0
     coupon_code = None
@@ -179,6 +194,7 @@ def build_order(db: Session, data: OrderCreate, settings: Settings) -> Order:
         notes=data.notes,
         payment_method=data.payment_method,
         payment_status=PaymentStatus.cod_due if data.payment_method == PaymentMethod.cod else PaymentStatus.pending,
+        out_of_zone=out_of_zone,
         subtotal_paise=subtotal,
         delivery_fee_paise=fee,
         coupon_code=coupon_code,
