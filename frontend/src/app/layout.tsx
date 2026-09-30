@@ -9,7 +9,7 @@ import { CartProvider } from "@/lib/cart";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: { default: "PBL Plants — Indoor plants & gifting in Visakhapatnam", template: "%s · PBL Plants" },
   description:
     "Indoor plants, lucky bamboo, ceramic pots, soil mix and decorative stones in Seethammapeta, Vizag. Doorstep delivery across Visakhapatnam. Open daily 9am–9pm.",

@@ -164,14 +164,16 @@ export type OrderCreated = {
   razorpay: { key_id: string; razorpay_order_id: string; amount_paise: number; currency: string } | null;
 };
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-const SERVER_API_URL = (process.env.API_URL ?? API_URL).replace(/\/$/, "");
+// `||` (not `??`) on purpose: a blank env var in a hosting dashboard is an empty string,
+// not undefined — `??` would let it through instead of falling back to the default.
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const SERVER_API_URL = (process.env.API_URL || API_URL).replace(/\/$/, "");
 
 export const SHOP = {
-  whatsapp: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "919959558369",
+  whatsapp: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "919959558369",
   phoneDisplay: "099595 58369",
-  mapsUrl: process.env.NEXT_PUBLIC_MAPS_URL ?? "https://share.google/9ZfxjPjrg7IeiK2Ex",
-  instagram: process.env.NEXT_PUBLIC_INSTAGRAM_URL ?? "https://www.instagram.com/pbl_plants_/",
+  mapsUrl: process.env.NEXT_PUBLIC_MAPS_URL || "https://share.google/9ZfxjPjrg7IeiK2Ex",
+  instagram: process.env.NEXT_PUBLIC_INSTAGRAM_URL || "https://www.instagram.com/pbl_plants_/",
 };
 
 export function whatsappLink(message?: string) {
