@@ -32,9 +32,6 @@ export default async function Home() {
         <span className="hero-leaf a" aria-hidden="true"><Icon name="leaf" /></span>
         <span className="hero-leaf b" aria-hidden="true"><Icon name="leaf" /></span>
         <span className="hero-leaf c" aria-hidden="true"><Icon name="leaf" /></span>
-        <span className="hero-plant d" aria-hidden="true"><Icon name="succulent" /></span>
-        <span className="hero-plant e" aria-hidden="true"><Icon name="pot-ceramic" /></span>
-        <span className="hero-plant f" aria-hidden="true"><Icon name="pot-plastic" /></span>
         <div>
           <p className="eyebrow">Visakhapatnam&apos;s neighbourhood indoor plant store</p>
           <h1>Bring more green<br />into your home.</h1>
@@ -54,10 +51,8 @@ export default async function Home() {
           </div>
         </div>
         <div className="hero-art">
-          <span className="logo-frame lg">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.jpg" alt="PBL Plants" />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.jpg" alt="PBL Plants" />
         </div>
       </section>
 
@@ -107,7 +102,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="faq" className="section faq-section">
+      <section id="faq" className="section">
         <div className="section-head">
           <p className="eyebrow">Good to know</p>
           <h2>Frequently asked questions</h2>
