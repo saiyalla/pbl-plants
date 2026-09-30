@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SHOP, whatsappLink } from "@/lib/api";
 import { useCart } from "@/lib/cart";
-import { readAdminToken } from "@/lib/tracking";
+import { readAdminToken, saveAdminToken } from "@/lib/tracking";
 import { Icon } from "./Icons";
 
 const TICKER =
@@ -31,6 +31,13 @@ export function Nav() {
   // and then clicking away — e.g. the logo — the nav already knows to offer a way back.
   useEffect(() => setIsAdmin(!!readAdminToken()), [pathname]);
 
+  function signOut() {
+    saveAdminToken("");
+    setIsAdmin(false);
+    // Full reload so the admin page's own (separately-held) session state resets too.
+    window.location.reload();
+  }
+
   return (
     <nav className="nav" aria-label="Main">
       <div className="wrap row">
@@ -39,15 +46,17 @@ export function Nav() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.jpg" alt="PBL Plants" />
           </span>
-          PBL Plants
+          <span className="brand-text">PBL Plants</span>
         </Link>
         <ul className="nav-links">
           <li><Link href="/#catalog">Shop</Link></li>
           <li className="hide-sm"><Link href="/#care">Care notes</Link></li>
           <li className="hide-sm"><Link href="/#visit">Visit</Link></li>
           <li><Link href="/track">Track order</Link></li>
-          {isAdmin && pathname !== "/admin" && (
-            <li><Link href="/admin">Dashboard</Link></li>
+          {isAdmin && (
+            pathname === "/admin"
+              ? <li><button type="button" className="as-link" onClick={signOut}>Sign out</button></li>
+              : <li><Link href="/admin">Dashboard</Link></li>
           )}
           <li>
             <button className="cart-btn" onClick={open} aria-label={`Open cart, ${count} item${count === 1 ? "" : "s"}`}>

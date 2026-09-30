@@ -99,15 +99,12 @@ export default function AdminPage() {
     <div className="wrap page">
       <div className="admin-bar">
         <div className="page-head" style={{ margin: 0 }}><p className="eyebrow">PBL team</p><h1>Dashboard</h1></div>
-        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
-          <div className="tabs">
-            <button aria-pressed={tab === "orders"} onClick={() => setTab("orders")}>Orders</button>
-            <button aria-pressed={tab === "products"} onClick={() => setTab("products")}>Products</button>
-            <button aria-pressed={tab === "offers"} onClick={() => setTab("offers")}>Offers</button>
-            <button aria-pressed={tab === "delivery"} onClick={() => setTab("delivery")}>Delivery</button>
-            <button aria-pressed={tab === "coupons"} onClick={() => setTab("coupons")}>Coupons</button>
-          </div>
-          <button className="btn ghost" onClick={() => { saveAdminToken(""); setToken(""); }}>Sign out</button>
+        <div className="tabs">
+          <button aria-pressed={tab === "orders"} onClick={() => setTab("orders")}>Orders</button>
+          <button aria-pressed={tab === "products"} onClick={() => setTab("products")}>Products</button>
+          <button aria-pressed={tab === "offers"} onClick={() => setTab("offers")}>Offers</button>
+          <button aria-pressed={tab === "delivery"} onClick={() => setTab("delivery")}>Delivery</button>
+          <button aria-pressed={tab === "coupons"} onClick={() => setTab("coupons")}>Coupons</button>
         </div>
       </div>
       {tab === "orders" ? <Orders token={token} />
