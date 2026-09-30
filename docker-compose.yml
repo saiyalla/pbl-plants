@@ -1,0 +1,44 @@
+# Run the whole shop locally with Postgres:   docker compose up --build
+# Site: http://localhost:3000   API docs: http://localhost:8000/docs   Team dashboard: http://localhost:3000/admin
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pbl
+      POSTGRES_PASSWORD: pbl-local-only
+      POSTGRES_DB: pbl
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pbl"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://pbl:pbl-local-only@db:5432/pbl
+      FRONTEND_ORIGINS: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_SITE_URL: http://localhost:3000
+    environment:
+      API_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
