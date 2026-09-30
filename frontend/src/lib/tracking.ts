@@ -62,10 +62,15 @@ export function readAdminToken(): string {
   }
 }
 
+export const ADMIN_AUTH_EVENT = "pbl-admin-auth-change";
+
 export function saveAdminToken(token: string) {
   try {
     token ? window.sessionStorage.setItem(ADMIN_TOKEN_KEY, token) : window.sessionStorage.removeItem(ADMIN_TOKEN_KEY);
   } catch {
     /* ignore */
   }
+  // Logging in/out doesn't always change the URL (e.g. signing in while already on /admin), so
+  // the nav can't rely on route changes alone to notice — it listens for this instead.
+  window.dispatchEvent(new Event(ADMIN_AUTH_EVENT));
 }

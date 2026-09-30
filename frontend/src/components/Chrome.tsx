@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SHOP, whatsappLink } from "@/lib/api";
 import { useCart } from "@/lib/cart";
-import { readAdminToken, saveAdminToken } from "@/lib/tracking";
+import { ADMIN_AUTH_EVENT, readAdminToken, saveAdminToken } from "@/lib/tracking";
 import { Icon } from "./Icons";
 
 const TICKER =
@@ -27,9 +27,15 @@ export function Nav() {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Re-checked on every navigation (not just once on mount) so that after signing into /admin
-  // and then clicking away — e.g. the logo — the nav already knows to offer a way back.
-  useEffect(() => setIsAdmin(!!readAdminToken()), [pathname]);
+  // Re-checked on every navigation (so that after signing into /admin and clicking away — e.g.
+  // the logo — the nav already knows to offer a way back) and on the auth-change event (so
+  // logging in/out while already on /admin, with no navigation at all, updates immediately too).
+  useEffect(() => {
+    const check = () => setIsAdmin(!!readAdminToken());
+    check();
+    window.addEventListener(ADMIN_AUTH_EVENT, check);
+    return () => window.removeEventListener(ADMIN_AUTH_EVENT, check);
+  }, [pathname]);
 
   function signOut() {
     saveAdminToken("");
