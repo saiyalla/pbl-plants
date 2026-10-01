@@ -46,6 +46,7 @@ export type DeliveryCheckResult = {
   free_delivery_min_paise: number;
   distance_km: number | null;
   cod_allowed: boolean;
+  pending_zone: boolean;
 };
 
 export type DeliveryZone = {
@@ -148,6 +149,7 @@ export type Order = {
   total_paise: number;
   out_of_zone: boolean;
   shipping_courier: string | null;
+  pending_zone: boolean;
   items: OrderItem[];
   created_at: string;
   /** Set only when there's something to pay right now (a fresh online order, or an out-of-zone

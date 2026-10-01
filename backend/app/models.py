@@ -192,13 +192,17 @@ class Order(Base):
     razorpay_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     razorpay_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    # Set when the pincode isn't in our own delivery zones — we ship these by courier
-    # instead of our own team. The shipping charge is only known after the team
-    # gets a courier quote, so it's added later from the admin panel, which creates a Razorpay
-    # order for cart + shipping (same mechanism as a normal online order) that the customer
-    # pays on their own order page.
+    # Set when the pincode isn't in our own delivery zones and doesn't look like it's inside
+    # Visakhapatnam (a pincode lookup) — these are shipped by courier instead of our own team.
+    # The shipping charge is only known after the team gets a courier quote, so it's added
+    # later from the admin panel, which creates a Razorpay order for cart + shipping (same
+    # mechanism as a normal online order) that the customer pays on their own order page.
     out_of_zone: Mapped[bool] = mapped_column(Boolean, default=False)
     shipping_courier: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Set when the pincode isn't in our own delivery zones yet, but the lookup says it IS
+    # inside Visakhapatnam — our own team still delivers it, once the admin confirms the
+    # distance (which also adds it as a normal zone for every future order to that pincode).
+    pending_zone: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

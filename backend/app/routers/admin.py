@@ -47,10 +47,11 @@ from app.schemas import (
     ShippingQuoteIn,
     ShippingQuoteResult,
     StatusUpdate,
+    ZoneConfirmIn,
 )
 from app.routers.payments import mark_paid
 from app.services.notify import notify_team, rupees
-from app.services.orders import get_delivery_settings
+from app.services.orders import compute_delivery, get_delivery_settings
 from app.services.payments import PaymentGatewayError, create_razorpay_order, get_order_payments
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "products"
@@ -179,6 +180,65 @@ def set_shipping_quote(
         f"Hi {order.customer_name.split(' ')[0]}, your PBL Plants order {order.public_id} is ready to "
         f"ship{courier_bit}. Parcel + shipping total: {rupees(order.total_paise)}. "
         f"Pay here to dispatch: {pay_url}"
+    )
+    return ShippingQuoteResult(
+        order=AdminOrderOut.model_validate(order),
+        whatsapp_url=f"https://wa.me/91{order.phone}?text={quote(message)}",
+        message=message,
+    )
+
+
+@router.post("/orders/{order_id}/confirm-zone", response_model=ShippingQuoteResult)
+def confirm_local_zone(
+    order_id: int,
+    data: ZoneConfirmIn,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Once the team confirms the road distance for a pending-zone order (a pincode that
+    looked like Visakhapatnam but wasn't in the delivery-zone list yet), this registers it as a
+    normal delivery zone — so every future order to that pincode is priced automatically — and
+    creates a Razorpay order for the now-known total, same as the out-of-zone courier flow."""
+    order = db.get(Order, order_id)
+    if order is None:
+        raise HTTPException(404, "Order not found.")
+    if not order.pending_zone:
+        raise HTTPException(409, "This order isn't waiting on a delivery zone to be confirmed.")
+    if order.payment_status == PaymentStatus.paid:
+        raise HTTPException(409, "This order is already paid.")
+    if not settings.online_payments_enabled:
+        raise HTTPException(503, "Online payments aren't set up — add Razorpay keys first.")
+
+    zone = db.scalar(select(DeliveryZone).where(DeliveryZone.pincode == order.pincode))
+    if zone is None:
+        db.add(DeliveryZone(pincode=order.pincode, distance_km=data.distance_km, label=data.label or ""))
+    else:  # pragma: no cover — defensive only; shouldn't happen since pending_zone implies no zone yet
+        zone.distance_km = data.distance_km
+    db.flush()
+
+    delivery = compute_delivery(db, order.pincode, order.subtotal_paise)
+    order.delivery_fee_paise = delivery.fee_paise
+    order.pending_zone = False
+    order.total_paise = max(0, order.subtotal_paise - order.discount_paise) + order.delivery_fee_paise
+
+    try:
+        order.razorpay_order_id = create_razorpay_order(
+            amount_paise=order.total_paise,
+            receipt=order.public_id,
+            key_id=settings.razorpay_key_id,
+            key_secret=settings.razorpay_key_secret,
+        )
+    except PaymentGatewayError as e:
+        raise HTTPException(502, f"Couldn't create the payment: {e}") from None
+
+    order.payment_status = PaymentStatus.pending
+    db.commit()
+    db.refresh(order)
+
+    pay_url = f"{settings.site_url}/order/{order.public_id}?phone={order.phone}"
+    message = (
+        f"Hi {order.customer_name.split(' ')[0]}, your PBL Plants order {order.public_id} delivery is "
+        f"confirmed. Total: {rupees(order.total_paise)}. Pay here: {pay_url}"
     )
     return ShippingQuoteResult(
         order=AdminOrderOut.model_validate(order),

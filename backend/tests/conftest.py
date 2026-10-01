@@ -23,6 +23,16 @@ def _reset_rate_limits():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_real_pincode_lookups(monkeypatch):
+    """Tests must never depend on reaching the real India Post API — stub it to "unknown
+    district" by default. Tests of the pending-zone behaviour override this explicitly."""
+    import app.services.orders as orders_service
+
+    monkeypatch.setattr(orders_service, "lookup_district", lambda pincode, client=None: None)
+    yield
+
+
 @pytest.fixture
 def settings() -> Settings:
     return Settings(

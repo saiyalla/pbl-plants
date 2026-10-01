@@ -20,6 +20,7 @@ from app.models import (
     utcnow,
 )
 from app.schemas import OrderCreate
+from app.services.pincode import is_visakhapatnam, lookup_district
 
 
 @dataclass
@@ -36,6 +37,10 @@ class DeliveryResult:
     distance_km: float | None
     cod_allowed: bool
     free_delivery_min_paise: int
+    # True when the pincode isn't in our zone list yet, but looks like it's inside
+    # Visakhapatnam — delivered by our own team once the admin confirms the distance,
+    # rather than shipped out by courier like a genuinely out-of-town pincode.
+    pending_zone: bool = False
 
 
 @dataclass
@@ -60,9 +65,11 @@ def compute_delivery(db: Session, pincode: str, subtotal_paise: int) -> Delivery
     s = get_delivery_settings(db)
     zone = db.scalar(select(DeliveryZone).where(DeliveryZone.pincode == pincode))
     if zone is None:
+        pending_zone = is_visakhapatnam(lookup_district(pincode))
         return DeliveryResult(
             deliverable=False, fee_paise=0, base_fee_paise=0, distance_km=None,
             cod_allowed=False, free_delivery_min_paise=s.free_delivery_min_paise,
+            pending_zone=pending_zone,
         )
 
     if zone.distance_km > s.max_km:
@@ -113,21 +120,24 @@ def build_order(db: Session, data: OrderCreate, settings: Settings) -> Order:
     # A rough subtotal (before we know exact line prices) is enough to check the free-delivery
     # threshold; it's recomputed exactly below once server-side prices are resolved.
     delivery = compute_delivery(db, data.pincode, subtotal_paise=0)
-    # Pincodes outside our own delivery zones aren't refused — they're shipped by courier
-    # instead. The exact parcel charge only comes once the team gets a courier
-    # quote, so it can't be collected at checkout: COD is impossible (no team visit to collect
-    # cash) and online payment for the balance happens later via a link sent after packing.
-    out_of_zone = not delivery.deliverable
-    if out_of_zone:
+    # A pincode outside our own delivery-zone list isn't refused outright. If it looks like it's
+    # inside Visakhapatnam (via a pincode lookup), our own team still delivers it — the admin
+    # just needs to confirm the distance once, after which it's a normal zone forever. Anywhere
+    # else is shipped out by courier instead. Either way, the exact fee isn't known yet, so it
+    # can't be collected at checkout: COD is impossible, and online payment for the full amount
+    # happens later via a link sent once the team has confirmed it.
+    pending_zone = not delivery.deliverable and delivery.pending_zone
+    out_of_zone = not delivery.deliverable and not delivery.pending_zone
+    if out_of_zone or pending_zone:
         if data.payment_method != PaymentMethod.online:
             raise OrderError(
-                "Cash on delivery isn't available for this pincode — we ship it by courier instead. "
-                "Choose online payment and we'll confirm the exact shipping charge before dispatch."
+                "Cash on delivery isn't available for this pincode yet — choose online payment and "
+                "we'll confirm the exact delivery charge before dispatch."
             )
         if not settings.online_payments_enabled:
             raise OrderError(
-                "Shipping this address needs a courier and online payment, and online payment isn't "
-                "set up yet — message us on WhatsApp and we'll help.",
+                "This address needs online payment to confirm, and online payment isn't set up yet "
+                "— message us on WhatsApp and we'll help.",
                 503,
             )
     else:
@@ -173,8 +183,8 @@ def build_order(db: Session, data: OrderCreate, settings: Settings) -> Order:
         raise OrderError(f"Minimum order is ₹{settings.min_order_paise // 100}.")
 
     # Recompute with the real subtotal — the free-delivery threshold depends on it. Out-of-zone
-    # orders have no fee yet; the team adds one once they have a courier quote.
-    fee = 0 if out_of_zone else compute_delivery(db, data.pincode, subtotal).fee_paise
+    # and pending-zone orders have no fee yet; the team adds one once it's confirmed.
+    fee = 0 if (out_of_zone or pending_zone) else compute_delivery(db, data.pincode, subtotal).fee_paise
 
     discount = 0
     coupon_code = None
@@ -195,6 +205,7 @@ def build_order(db: Session, data: OrderCreate, settings: Settings) -> Order:
         payment_method=data.payment_method,
         payment_status=PaymentStatus.cod_due if data.payment_method == PaymentMethod.cod else PaymentStatus.pending,
         out_of_zone=out_of_zone,
+        pending_zone=pending_zone,
         subtotal_paise=subtotal,
         delivery_fee_paise=fee,
         coupon_code=coupon_code,

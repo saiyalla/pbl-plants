@@ -1,3 +1,4 @@
+import app.services.orders as orders_service
 from app.routers import admin as admin_router
 from app.routers import orders as orders_router
 from tests.conftest import order_payload, product_id
@@ -121,4 +122,44 @@ def test_shipping_quote_rejected_for_in_zone_order(client, admin_headers):
         json={"shipping_fee_paise": 15000},
         headers=admin_headers,
     )
+    assert res.status_code == 409
+
+
+def test_confirm_zone_registers_delivery_zone_and_creates_payment(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(orders_service, "lookup_district", lambda pincode, client=None: "Visakhapatnam")
+    monkeypatch.setattr(admin_router, "create_razorpay_order", lambda **kw: "order_ZONE")
+    monkeypatch.setattr(orders_router, "create_razorpay_order", lambda **kw: "order_SECOND")
+    client.post("/api/orders", json=order_payload(client, pincode="530099", payment_method="online"))
+    oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
+
+    res = client.post(
+        f"/api/admin/orders/{oid}/confirm-zone",
+        json={"distance_km": 9, "label": "New layout"},
+        headers=admin_headers,
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()["order"]
+    assert body["pending_zone"] is False
+    assert body["razorpay_order_id"] == "order_ZONE"
+    assert body["payment_status"] == "pending"
+    # free_km defaults to 5, rate 2000 paise/km -> (9-5)*2000 = 8000
+    assert body["delivery_fee_paise"] == 8000
+    assert body["total_paise"] == 48000  # ₹400 cart + ₹80 delivery
+
+    zones = client.get("/api/admin/delivery-zones", headers=admin_headers).json()
+    assert any(z["pincode"] == "530099" and z["distance_km"] == 9 for z in zones)
+
+    # The pincode is now a normal zone — a second order there is priced immediately, no quote
+    # needed. It's beyond free_km (9 > 5), so COD isn't offered — same as any such zone.
+    second_res = client.post("/api/orders", json=order_payload(client, pincode="530099", payment_method="online"))
+    assert second_res.status_code == 201, second_res.text
+    second = second_res.json()["order"]
+    assert second["pending_zone"] is False
+    assert second["delivery_fee_paise"] == 8000
+
+
+def test_confirm_zone_rejected_when_not_pending(client, admin_headers):
+    client.post("/api/orders", json=order_payload(client))  # normal Vizag COD order, not pending
+    oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
+    res = client.post(f"/api/admin/orders/{oid}/confirm-zone", json={"distance_km": 5}, headers=admin_headers)
     assert res.status_code == 409

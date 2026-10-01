@@ -123,12 +123,15 @@ function orderPayUrl(o: AdminOrder): string {
   return `${window.location.origin}/order/${o.public_id}?phone=${o.phone}`;
 }
 
-/** Mirrors the message the backend builds when a shipping quote is created — used to rebuild
- * the WhatsApp link after a page reload, once the server's own one-time message is gone. */
-function courierWhatsappMessage(o: AdminOrder): string {
+/** Mirrors the messages the backend builds when a shipping quote or zone is confirmed — used
+ * to rebuild the WhatsApp link after a page reload, once the server's own one-time message is gone. */
+function pendingPaymentWhatsappMessage(o: AdminOrder): string {
   const first = o.customer_name.split(" ")[0];
-  const courierBit = o.shipping_courier ? ` via ${o.shipping_courier}` : "";
-  return `Hi ${first}, your PBL Plants order ${o.public_id} is ready to ship${courierBit}. Parcel + shipping total: ${rupees(o.total_paise)}. Pay here to dispatch: ${orderPayUrl(o)}`;
+  if (o.out_of_zone) {
+    const courierBit = o.shipping_courier ? ` via ${o.shipping_courier}` : "";
+    return `Hi ${first}, your PBL Plants order ${o.public_id} is ready to ship${courierBit}. Parcel + shipping total: ${rupees(o.total_paise)}. Pay here to dispatch: ${orderPayUrl(o)}`;
+  }
+  return `Hi ${first}, your PBL Plants order ${o.public_id} delivery is confirmed. Total: ${rupees(o.total_paise)}. Pay here: ${orderPayUrl(o)}`;
 }
 
 function ShippingQuoteForm({ order, token, onDone }: { order: AdminOrder; token: string; onDone: (o: AdminOrder) => void }) {
@@ -174,6 +177,58 @@ function ShippingQuoteForm({ order, token, onDone }: { order: AdminOrder; token:
       </div>
       <button className="btn primary" disabled={busy} style={{ marginTop: "0.6rem" }}>
         {busy ? "Setting charge…" : "Set shipping charge & message customer"}
+      </button>
+    </form>
+  );
+}
+
+function ZoneConfirmForm({ order, token, onDone }: { order: AdminOrder; token: string; onDone: (o: AdminOrder) => void }) {
+  const [distance, setDistance] = useState("");
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    const km = parseFloat(distance);
+    if (!Number.isFinite(km) || km < 0) {
+      setErr("Enter a valid distance in km.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const result = await api<ShippingQuoteResult>(`/api/admin/orders/${order.id}/confirm-zone`, {
+        method: "POST", token, body: JSON.stringify({ distance_km: km, label: label.trim() || null }),
+      });
+      onDone(result.order);
+      window.open(result.whatsapp_url, "_blank");
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Couldn't confirm the delivery zone.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="quote-form" onSubmit={create}>
+      {err && <div className="alert error" style={{ fontSize: "0.82rem" }}>{err}</div>}
+      <p className="muted" style={{ fontSize: "0.82rem", margin: "0 0 0.5rem" }}>
+        This pincode looks like it&apos;s in Visakhapatnam but isn&apos;t a saved delivery zone yet.
+        Confirm the road distance to price it (and every future order here) automatically.
+      </p>
+      <div className="field-row">
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>Area name (optional)</label>
+          <input placeholder="e.g. MVP Colony" value={label} onChange={(e) => setLabel(e.target.value)} />
+        </div>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>Distance from store (km)</label>
+          <input type="number" min="0" step="0.1" inputMode="decimal" value={distance} onChange={(e) => setDistance(e.target.value)} required />
+        </div>
+      </div>
+      <button className="btn primary" disabled={busy} style={{ marginTop: "0.6rem" }}>
+        {busy ? "Confirming…" : "Confirm zone & message customer"}
       </button>
     </form>
   );
@@ -262,6 +317,7 @@ function Orders({ token }: { token: string }) {
                     <span className="tag">{STATUS_LABEL[o.status]}</span>
                     <span className={`tag ${payTag}`}>{PAYMENT_LABEL[o.payment_status]}</span>
                     {o.out_of_zone && <span className="tag warn">Courier</span>}
+                    {o.pending_zone && <span className="tag warn">New area</span>}
                   </div>
                   <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{rupees(o.total_paise)}</div>
                 </div>
@@ -277,20 +333,28 @@ function Orders({ token }: { token: string }) {
                   {o.items.map((i) => <li key={i.product_name}>{i.quantity} × {i.product_name} — {rupees(i.line_total_paise)}</li>)}
                 </ul>
                 {o.notes && <p style={{ margin: "0.6rem 0 0", fontSize: "0.88rem" }}><strong>Note:</strong> {o.notes}</p>}
-                {o.out_of_zone && o.payment_status !== "paid" && (
+                {(o.out_of_zone || o.pending_zone) && o.payment_status !== "paid" && (
                   <div className="courier-box">
                     {!o.razorpay_order_id ? (
-                      <ShippingQuoteForm
-                        order={o}
-                        token={token}
-                        onDone={(updated) => setOrders((list) => list.map((x) => (x.id === updated.id ? updated : x)))}
-                      />
+                      o.pending_zone ? (
+                        <ZoneConfirmForm
+                          order={o}
+                          token={token}
+                          onDone={(updated) => setOrders((list) => list.map((x) => (x.id === updated.id ? updated : x)))}
+                        />
+                      ) : (
+                        <ShippingQuoteForm
+                          order={o}
+                          token={token}
+                          onDone={(updated) => setOrders((list) => list.map((x) => (x.id === updated.id ? updated : x)))}
+                        />
+                      )
                     ) : (
                       <div className="quote-sent">
                         <span className="muted" style={{ fontSize: "0.85rem" }}>
                           Customer notified{o.shipping_courier ? ` (${o.shipping_courier})` : ""} — {rupees(o.total_paise)} total.
                         </span>
-                        <a className="btn ghost" href={`https://wa.me/91${o.phone}?text=${encodeURIComponent(courierWhatsappMessage(o))}`} target="_blank" rel="noopener">
+                        <a className="btn ghost" href={`https://wa.me/91${o.phone}?text=${encodeURIComponent(pendingPaymentWhatsappMessage(o))}`} target="_blank" rel="noopener">
                           Resend on WhatsApp
                         </a>
                         <a className="btn ghost" href={orderPayUrl(o)} target="_blank" rel="noopener">View order page</a>
@@ -305,7 +369,7 @@ function Orders({ token }: { token: string }) {
                   {next && !unpaidOnline && (
                     <button className="btn primary" disabled={busyId === o.id} onClick={() => move(o, next.to)}>{next.label}</button>
                   )}
-                  {unpaidOnline && o.status === "placed" && !o.out_of_zone && (
+                  {unpaidOnline && o.status === "placed" && !o.out_of_zone && !o.pending_zone && (
                     <span className="muted" style={{ fontSize: "0.85rem", alignSelf: "center" }}>Waiting for online payment…</span>
                   )}
                   {!["delivered", "cancelled"].includes(o.status) && (

@@ -50,7 +50,7 @@ def place_order(
     db.flush()  # assigns public_id
 
     checkout = None
-    if order.payment_method == PaymentMethod.online and not order.out_of_zone:
+    if order.payment_method == PaymentMethod.online and not order.out_of_zone and not order.pending_zone:
         try:
             rp_id = create_razorpay_order(
                 amount_paise=order.total_paise,
@@ -75,12 +75,14 @@ def place_order(
     db.commit()
     db.refresh(order)
 
-    # COD and out-of-zone orders go to the team straight away (the latter needs a courier
-    # booked); other online orders only get notified once payment is verified.
+    # COD, out-of-zone and pending-zone orders go to the team straight away (the latter two
+    # need the team to confirm a charge); other online orders only get notified once paid.
     if order.payment_method == PaymentMethod.cod:
         background.add_task(notify_team, order, "New COD order")
     elif order.out_of_zone:
         background.add_task(notify_team, order, "New order — needs a courier quote")
+    elif order.pending_zone:
+        background.add_task(notify_team, order, "New order — confirm delivery zone")
 
     return OrderCreated(order=OrderOut.model_validate(order), razorpay=checkout)
 

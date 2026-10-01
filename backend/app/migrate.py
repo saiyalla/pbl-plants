@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 NEW_ORDER_COLUMNS = {
     "out_of_zone": "BOOLEAN DEFAULT FALSE",
     "shipping_courier": "VARCHAR(40)",
+    "pending_zone": "BOOLEAN DEFAULT FALSE",
 }
 
 

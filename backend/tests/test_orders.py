@@ -1,3 +1,4 @@
+import app.services.orders as orders_service
 from tests.conftest import order_payload, product_id
 
 
@@ -37,7 +38,7 @@ def test_duplicate_lines_are_merged(client):
 def test_cod_rejected_outside_delivery_area(client):
     res = client.post("/api/orders", json=order_payload(client, pincode="500081"))
     assert res.status_code == 422
-    assert "courier" in res.json()["detail"]
+    assert "delivery charge" in res.json()["detail"]
 
 
 def test_out_of_zone_online_order_awaits_shipping_quote(client):
@@ -50,6 +51,33 @@ def test_out_of_zone_online_order_awaits_shipping_quote(client):
     assert order["total_paise"] == 40000  # cart only — shipping added later
     assert order["payment_status"] == "pending"
     assert body["razorpay"] is None  # amount isn't known yet, so no checkout is started
+
+
+def test_pending_zone_detected_via_pincode_lookup(client, monkeypatch):
+    # A pincode we've never configured, but the lookup says it's in Visakhapatnam.
+    monkeypatch.setattr(orders_service, "lookup_district", lambda pincode, client=None: "Visakhapatnam")
+    res = client.post("/api/orders", json=order_payload(client, pincode="530099", payment_method="online"))
+    assert res.status_code == 201, res.text
+    order = res.json()["order"]
+    assert order["pending_zone"] is True
+    assert order["out_of_zone"] is False
+    assert order["delivery_fee_paise"] == 0
+    assert order["total_paise"] == 40000  # cart only — delivery fee added once confirmed
+    assert order["payment_status"] == "pending"
+    assert res.json()["razorpay"] is None  # amount isn't known yet
+
+
+def test_pending_zone_cod_rejected(client, monkeypatch):
+    monkeypatch.setattr(orders_service, "lookup_district", lambda pincode, client=None: "Visakhapatnam")
+    res = client.post("/api/orders", json=order_payload(client, pincode="530099"))
+    assert res.status_code == 422
+
+
+def test_delivery_check_flags_pending_zone(client, monkeypatch):
+    monkeypatch.setattr(orders_service, "lookup_district", lambda pincode, client=None: "Visakhapatnam District")
+    body = client.get("/api/delivery/check?pincode=530099").json()
+    assert body["deliverable"] is False
+    assert body["pending_zone"] is True
 
 
 def test_rejects_bad_phone(client):

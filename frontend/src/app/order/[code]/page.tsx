@@ -73,9 +73,11 @@ export default function OrderPage() {
 
   const cancelled = order.status === "cancelled";
   const currentIndex = STATUS_STEPS.findIndex((s) => s.key === order.status);
-  const awaitingQuote = order.out_of_zone && !order.razorpay && order.payment_status !== "paid";
+  const awaitingQuote = (order.out_of_zone || order.pending_zone) && !order.razorpay && order.payment_status !== "paid";
   const payable = !!order.razorpay && order.payment_status !== "paid";
-  const awaitingPayment = !order.out_of_zone && order.payment_method === "online" && order.payment_status !== "paid" && !payable;
+  const awaitingPayment =
+    !order.out_of_zone && !order.pending_zone && order.payment_method === "online" &&
+    order.payment_status !== "paid" && !payable;
 
   async function pay() {
     if (!order?.razorpay) return;
@@ -118,9 +120,11 @@ export default function OrderPage() {
 
       {awaitingQuote && (
         <div className="alert info">
-          This address is outside our local delivery zone, so we ship it by courier. We&apos;re checking the
-          exact parcel charge now and will message you on WhatsApp with the total and a secure payment link
-          before we dispatch — usually within a day. Questions?{" "}
+          {order.out_of_zone
+            ? "This address is outside our local delivery zone, so we ship it by courier. We're checking the exact parcel charge now"
+            : "This address is just outside our configured delivery zones — we're confirming the exact delivery charge now"}
+          {" "}and will message you on WhatsApp with the total and a secure payment link before we dispatch —
+          usually within a day. Questions?{" "}
           <a href={whatsappLink(`Hi PBL Plants, about my order ${order.public_id}`)} target="_blank" rel="noopener">Message us</a>.
         </div>
       )}
@@ -129,7 +133,7 @@ export default function OrderPage() {
         <div className="alert info">
           {order.out_of_zone
             ? <>Your order is ready to ship{order.shipping_courier ? ` via ${order.shipping_courier}` : ""}! Pay {rupees(order.total_paise)} to confirm dispatch.</>
-            : <>Your payment wasn&apos;t completed yet — pay {rupees(order.total_paise)} to confirm this order.</>}
+            : <>Pay {rupees(order.total_paise)} to confirm this order.</>}
           <div style={{ marginTop: "0.6rem" }}>
             <button type="button" className="btn primary" disabled={paying} onClick={pay}>
               {paying ? "Opening payment…" : `Pay ${rupees(order.total_paise)} now`}

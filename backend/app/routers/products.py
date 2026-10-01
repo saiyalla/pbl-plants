@@ -37,6 +37,7 @@ def check_delivery(
         free_delivery_min_paise=result.free_delivery_min_paise,
         distance_km=result.distance_km,
         cod_allowed=result.cod_allowed,
+        pending_zone=result.pending_zone,
     )
 
 

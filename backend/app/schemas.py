@@ -135,6 +135,7 @@ class OrderOut(BaseModel):
     total_paise: int
     out_of_zone: bool
     shipping_courier: str | None
+    pending_zone: bool
     items: list[OrderItemOut]
     created_at: datetime
     # Only set when there's something to pay right now — a fresh online order, or an
@@ -224,6 +225,20 @@ class ShippingQuoteResult(BaseModel):
     message: str
 
 
+class ZoneConfirmIn(BaseModel):
+    """Submitted from the admin panel to confirm a pending-zone order — a pincode that looked
+    like Visakhapatnam but wasn't in the delivery-zone list yet."""
+
+    distance_km: float = Field(ge=0)
+    label: str | None = Field(default=None, max_length=80)
+
+    @field_validator("label")
+    @classmethod
+    def strip(cls, v: str | None) -> str | None:
+        v = v.strip() if v else None
+        return v or None
+
+
 class CodCollected(BaseModel):
     collected: bool = True
 
@@ -236,6 +251,7 @@ class DeliveryCheck(BaseModel):
     free_delivery_min_paise: int = 0
     distance_km: float | None = None
     cod_allowed: bool = False
+    pending_zone: bool = False
 
 
 class CouponOut(BaseModel):
