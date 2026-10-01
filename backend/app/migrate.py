@@ -12,8 +12,6 @@ from sqlalchemy.engine import Engine
 NEW_ORDER_COLUMNS = {
     "out_of_zone": "BOOLEAN DEFAULT FALSE",
     "shipping_courier": "VARCHAR(40)",
-    "razorpay_payment_link_id": "VARCHAR(64)",
-    "razorpay_payment_link_url": "VARCHAR(300)",
 }
 
 

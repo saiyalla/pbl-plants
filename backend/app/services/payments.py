@@ -59,59 +59,19 @@ def create_razorpay_order(
     return resp.json()["id"]
 
 
-def create_payment_link(
-    *,
-    amount_paise: int,
-    description: str,
-    customer_name: str,
-    customer_phone: str,
-    reference_id: str,
-    key_id: str,
-    key_secret: str,
-    client: httpx.Client | None = None,
-) -> dict:
-    """Create a Razorpay Payment Link and return its id + shareable URL.
+def get_order_payments(
+    *, razorpay_order_id: str, key_id: str, key_secret: str, client: httpx.Client | None = None
+) -> list[dict]:
+    """Pull the payments made against a Razorpay order straight from Razorpay.
 
-    Used for out-of-zone orders, where the amount (cart + courier charge) is only known after
-    checkout — a hosted link lets the customer pay it later instead of at the normal Checkout.
-    """
-    payload = {
-        "amount": amount_paise,
-        "currency": "INR",
-        "description": description,
-        "customer": {"name": customer_name, "contact": f"+91{customer_phone}"},
-        "notify": {"sms": False, "email": False},  # sent manually via WhatsApp, not Razorpay's own notifications
-        "reminder_enable": False,
-        "reference_id": reference_id,
-    }
-    own_client = client is None
-    client = client or httpx.Client(timeout=15)
-    try:
-        resp = client.post(f"{RAZORPAY_API}/payment_links", json=payload, auth=(key_id, key_secret))
-    except httpx.HTTPError as exc:
-        raise PaymentGatewayError(f"Could not reach Razorpay: {exc}") from exc
-    finally:
-        if own_client:
-            client.close()
-    if resp.status_code >= 400:
-        raise PaymentGatewayError(f"Razorpay rejected the payment link ({resp.status_code}): {resp.text[:300]}")
-    data = resp.json()
-    return {"id": data["id"], "short_url": data["short_url"]}
-
-
-def get_payment_link_status(
-    *, link_id: str, key_id: str, key_secret: str, client: httpx.Client | None = None
-) -> dict:
-    """Pull a Payment Link's status straight from Razorpay.
-
-    The webhook is the normal way we find out a link was paid, but it's a server-to-server
+    The webhook is the normal way we find out an order was paid, but it's a server-to-server
     call — it can't reach a `localhost` dev server, and could in principle be missed even in
     production. This is the manual fallback: ask Razorpay directly instead of waiting for it.
     """
     own_client = client is None
     client = client or httpx.Client(timeout=15)
     try:
-        resp = client.get(f"{RAZORPAY_API}/payment_links/{link_id}", auth=(key_id, key_secret))
+        resp = client.get(f"{RAZORPAY_API}/orders/{razorpay_order_id}/payments", auth=(key_id, key_secret))
     except httpx.HTTPError as exc:
         raise PaymentGatewayError(f"Could not reach Razorpay: {exc}") from exc
     finally:
@@ -119,7 +79,4 @@ def get_payment_link_status(
             client.close()
     if resp.status_code >= 400:
         raise PaymentGatewayError(f"Razorpay rejected the lookup ({resp.status_code}): {resp.text[:300]}")
-    data = resp.json()
-    payments = data.get("payments") or []
-    payment_id = payments[-1]["payment_id"] if payments else None
-    return {"status": data.get("status"), "payment_id": payment_id}
+    return resp.json().get("items") or []

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.limiter import limiter
-from app.models import CheckoutDraft, Order, PaymentMethod
+from app.models import CheckoutDraft, Order, PaymentMethod, PaymentStatus
 from app.schemas import CheckoutDraftIn, OrderCreate, OrderCreated, OrderOut, RazorpayCheckout
 from app.services.notify import notify_team
 from app.services.orders import OrderError, build_order
@@ -87,10 +87,22 @@ def place_order(
 
 @router.get("/{public_id}", response_model=OrderOut)
 @limiter.limit("10/minute")
-def track_order(request: Request, public_id: str, phone: str = Query(min_length=10), db: Session = Depends(get_db)):
+def track_order(
+    request: Request,
+    public_id: str,
+    phone: str = Query(min_length=10),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
     """Customers look up their order with the order code + the phone number they used."""
     order = db.scalar(select(Order).where(Order.public_id == public_id.upper()))
     digits = re.sub(r"\D", "", phone)[-10:]
     if order is None or order.phone != digits:
         raise HTTPException(404, "No order found with that code and phone number.")
-    return order
+
+    out = OrderOut.model_validate(order)
+    if order.razorpay_order_id and order.payment_status != PaymentStatus.paid:
+        out.razorpay = RazorpayCheckout(
+            key_id=settings.razorpay_key_id, razorpay_order_id=order.razorpay_order_id, amount_paise=order.total_paise
+        )
+    return out

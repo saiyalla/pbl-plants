@@ -17,35 +17,8 @@ import {
   rupees,
 } from "@/lib/api";
 import { useCart } from "@/lib/cart";
+import { payWithRazorpay } from "@/lib/razorpay";
 import { clearCheckoutDraft, loadCheckoutDraft, rememberOrderPhone, saveCheckoutDraft } from "@/lib/tracking";
-
-type RazorpayResponse = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
-type RazorpayInstance = { open: () => void; on: (event: string, cb: () => void) => void };
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => RazorpayInstance;
-  }
-}
-
-function loadRazorpay(): Promise<boolean> {
-  if (window.Razorpay) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => resolve(true);
-    s.onerror = () => resolve(false);
-    document.body.appendChild(s);
-  });
-}
-
-/** Razorpay's `prefill.contact` needs a clean "+91XXXXXXXXXX" — anything else (spaces, a
- * leading 0, no country code) is silently dropped and Checkout asks the customer to type
- * their number in again, even though we already collected it. */
-function razorpayContact(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  const last10 = digits.slice(-10);
-  return /^[6-9]\d{9}$/.test(last10) ? `+91${last10}` : "";
-}
 
 type Delivery = {
   state: "idle" | "checking" | "ok" | "no";
@@ -237,43 +210,26 @@ export default function CheckoutPage() {
 
   async function pay(created: OrderCreated) {
     const rp = created.razorpay!;
-    const ok = await loadRazorpay();
-    if (!ok || !window.Razorpay) {
+    const opened = await payWithRazorpay({
+      keyId: rp.key_id,
+      razorpayOrderId: rp.razorpay_order_id,
+      amountPaise: rp.amount_paise,
+      currency: rp.currency,
+      customerName: form.customer_name,
+      phone: form.phone,
+      publicId: created.order.public_id,
+      onVerified: () => finish(created),
+      onDismiss: () => {
+        setBusy(false);
+        setPending(created);
+        setError("Payment wasn't completed. Your order is saved — try paying again below.");
+      },
+      onFailed: () => setError("That payment didn't go through. You can try again."),
+    });
+    if (!opened) {
       setError("Couldn't load the payment window. Check your connection, or place the order as Cash on Delivery.");
       setPending(created);
-      return;
     }
-    const checkout = new window.Razorpay({
-      key: rp.key_id,
-      order_id: rp.razorpay_order_id,
-      amount: rp.amount_paise,
-      currency: rp.currency,
-      name: "PBL Plants",
-      description: `Order ${created.order.public_id}`,
-      prefill: { name: form.customer_name, contact: razorpayContact(form.phone) },
-      theme: { color: "#2E5233" },
-      handler: async (resp: RazorpayResponse) => {
-        setBusy(true);
-        try {
-          await api("/api/payments/verify", {
-            method: "POST",
-            body: JSON.stringify({ public_id: created.order.public_id, ...resp }),
-          });
-        } catch {
-          // The webhook will still confirm the payment server-side; the order page shows the live status.
-        }
-        finish(created);
-      },
-      modal: {
-        ondismiss: () => {
-          setBusy(false);
-          setPending(created);
-          setError("Payment wasn't completed. Your order is saved — try paying again below.");
-        },
-      },
-    });
-    checkout.on("payment.failed", () => setError("That payment didn't go through. You can try again."));
-    checkout.open();
   }
 
   async function submit(e: React.FormEvent) {
@@ -375,7 +331,7 @@ export default function CheckoutPage() {
               <h2 style={{ marginTop: "1.4rem" }}>Payment</h2>
               {delivery.state === "no" ? (
                 <p className="muted" style={{ fontSize: "0.85rem", marginTop: "-0.4rem" }}>
-                  This address is outside our local delivery zone — we ship it by courier (DTDC/RTC) and
+                  This address is outside our local delivery zone — we ship it by courier and
                   confirm the exact shipping charge after you order.
                 </p>
               ) : (

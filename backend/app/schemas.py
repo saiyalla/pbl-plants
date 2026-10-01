@@ -111,6 +111,13 @@ class OrderItemOut(BaseModel):
     line_total_paise: int
 
 
+class RazorpayCheckout(BaseModel):
+    key_id: str
+    razorpay_order_id: str
+    amount_paise: int
+    currency: str = "INR"
+
+
 class OrderOut(BaseModel):
     """What the customer sees."""
 
@@ -128,9 +135,12 @@ class OrderOut(BaseModel):
     total_paise: int
     out_of_zone: bool
     shipping_courier: str | None
-    razorpay_payment_link_url: str | None
     items: list[OrderItemOut]
     created_at: datetime
+    # Only set when there's something to pay right now — a fresh online order, or an
+    # out-of-zone order once the team has set the shipping charge. Lets the order's own page
+    # open the same Razorpay Checkout widget used at checkout, rather than a hosted link.
+    razorpay: RazorpayCheckout | None = None
 
 
 class AdminOrderOut(OrderOut):
@@ -143,7 +153,6 @@ class AdminOrderOut(OrderOut):
     notes: str
     razorpay_order_id: str | None
     razorpay_payment_id: str | None
-    razorpay_payment_link_id: str | None
     updated_at: datetime
 
 

@@ -51,7 +51,7 @@ from app.schemas import (
 from app.routers.payments import mark_paid
 from app.services.notify import notify_team, rupees
 from app.services.orders import get_delivery_settings
-from app.services.payments import PaymentGatewayError, create_payment_link, get_payment_link_status
+from app.services.payments import PaymentGatewayError, create_razorpay_order, get_order_payments
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "products"
 ALLOWED_IMAGE_TYPES = {
@@ -140,10 +140,11 @@ def set_shipping_quote(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
-    """Once the team has a courier (DTDC/RTC) quote for an out-of-zone order, this sets the
-    shipping charge, creates a Razorpay Payment Link for cart + shipping, and hands back a
-    wa.me link pre-filled with the total and the link — sending it is still a manual click,
-    same as the checkout-draft recovery flow, until a WhatsApp Business API is wired up."""
+    """Once the team has a courier quote for an out-of-zone order, this sets the shipping
+    charge, creates a Razorpay order for cart + shipping (the same mechanism as a normal
+    online order), and hands back a wa.me link to the customer's own order page — sending it
+    is still a manual click, same as the checkout-draft recovery flow, until a WhatsApp
+    Business API is wired up."""
     order = db.get(Order, order_id)
     if order is None:
         raise HTTPException(404, "Order not found.")
@@ -159,29 +160,25 @@ def set_shipping_quote(
     order.total_paise = max(0, order.subtotal_paise - order.discount_paise) + order.delivery_fee_paise
 
     try:
-        link = create_payment_link(
+        order.razorpay_order_id = create_razorpay_order(
             amount_paise=order.total_paise,
-            description=f"PBL Plants order {order.public_id}",
-            customer_name=order.customer_name,
-            customer_phone=order.phone,
-            reference_id=order.public_id,
+            receipt=order.public_id,
             key_id=settings.razorpay_key_id,
             key_secret=settings.razorpay_key_secret,
         )
     except PaymentGatewayError as e:
-        raise HTTPException(502, f"Couldn't create the payment link: {e}") from None
+        raise HTTPException(502, f"Couldn't create the payment: {e}") from None
 
-    order.razorpay_payment_link_id = link["id"]
-    order.razorpay_payment_link_url = link["short_url"]
     order.payment_status = PaymentStatus.pending
     db.commit()
     db.refresh(order)
 
+    pay_url = f"{settings.site_url}/order/{order.public_id}?phone={order.phone}"
     courier_bit = f" via {order.shipping_courier}" if order.shipping_courier else ""
     message = (
         f"Hi {order.customer_name.split(' ')[0]}, your PBL Plants order {order.public_id} is ready to "
         f"ship{courier_bit}. Parcel + shipping total: {rupees(order.total_paise)}. "
-        f"Pay here to dispatch: {order.razorpay_payment_link_url}"
+        f"Pay here to dispatch: {pay_url}"
     )
     return ShippingQuoteResult(
         order=AdminOrderOut.model_validate(order),
@@ -191,29 +188,28 @@ def set_shipping_quote(
 
 
 @router.post("/orders/{order_id}/refresh-payment", response_model=AdminOrderOut)
-def refresh_payment_link_status(
-    order_id: int, db: Session = Depends(get_db), settings: Settings = Depends(get_settings)
-):
-    """Manual fallback for when the webhook hasn't (or can't) reach us — e.g. testing a
-    Payment Link against a local server with no public URL. Asks Razorpay directly instead."""
+def refresh_payment_status(order_id: int, db: Session = Depends(get_db), settings: Settings = Depends(get_settings)):
+    """Manual fallback for when the webhook hasn't (or can't) reach us — e.g. testing against a
+    local server with no public URL. Asks Razorpay directly instead of waiting for it."""
     order = db.get(Order, order_id)
     if order is None:
         raise HTTPException(404, "Order not found.")
-    if not order.razorpay_payment_link_id:
-        raise HTTPException(409, "This order has no payment link yet.")
+    if not order.razorpay_order_id:
+        raise HTTPException(409, "This order has nothing to pay yet.")
     if order.payment_status == PaymentStatus.paid:
         return order
 
     try:
-        result = get_payment_link_status(
-            link_id=order.razorpay_payment_link_id,
+        payments = get_order_payments(
+            razorpay_order_id=order.razorpay_order_id,
             key_id=settings.razorpay_key_id,
             key_secret=settings.razorpay_key_secret,
         )
     except PaymentGatewayError as e:
-        raise HTTPException(502, f"Couldn't check the payment link: {e}") from None
+        raise HTTPException(502, f"Couldn't check the payment: {e}") from None
 
-    if result["status"] == "paid" and result["payment_id"] and mark_paid(db, order, result["payment_id"]):
+    captured = next((p for p in payments if p.get("status") == "captured"), None)
+    if captured and mark_paid(db, order, captured["id"]):
         notify_team(order, "New PAID order")
     db.refresh(order)
     return order

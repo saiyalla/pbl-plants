@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, type Order, PAYMENT_LABEL, rupees, STATUS_STEPS, whatsappLink } from "@/lib/api";
+import { payWithRazorpay } from "@/lib/razorpay";
 import { recallOrderPhone, rememberOrderPhone } from "@/lib/tracking";
 
 export default function OrderPage() {
@@ -13,6 +14,7 @@ export default function OrderPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isNew, setIsNew] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const load = useCallback(
     async (ph: string) => {
@@ -32,8 +34,11 @@ export default function OrderPage() {
   );
 
   useEffect(() => {
-    setIsNew(new URLSearchParams(window.location.search).has("new"));
-    const saved = recallOrderPhone(code);
+    const params = new URLSearchParams(window.location.search);
+    setIsNew(params.has("new"));
+    // Prefer a phone remembered on this device; otherwise, a link sent elsewhere (e.g. the
+    // WhatsApp message for an out-of-zone order) can carry it so the order loads straight away.
+    const saved = recallOrderPhone(code) || params.get("phone") || "";
     if (saved) {
       setPhone(saved);
       load(saved);
@@ -68,14 +73,35 @@ export default function OrderPage() {
 
   const cancelled = order.status === "cancelled";
   const currentIndex = STATUS_STEPS.findIndex((s) => s.key === order.status);
-  const awaitingQuote = order.out_of_zone && !order.razorpay_payment_link_url && order.payment_status !== "paid";
-  const awaitingLinkPayment = order.out_of_zone && !!order.razorpay_payment_link_url && order.payment_status !== "paid";
-  const awaitingPayment = !order.out_of_zone && order.payment_method === "online" && order.payment_status !== "paid";
+  const awaitingQuote = order.out_of_zone && !order.razorpay && order.payment_status !== "paid";
+  const payable = !!order.razorpay && order.payment_status !== "paid";
+  const awaitingPayment = !order.out_of_zone && order.payment_method === "online" && order.payment_status !== "paid" && !payable;
+
+  async function pay() {
+    if (!order?.razorpay) return;
+    setPaying(true);
+    const opened = await payWithRazorpay({
+      keyId: order.razorpay.key_id,
+      razorpayOrderId: order.razorpay.razorpay_order_id,
+      amountPaise: order.razorpay.amount_paise,
+      currency: order.razorpay.currency,
+      customerName: order.customer_name,
+      phone,
+      publicId: order.public_id,
+      onVerified: () => { setPaying(false); load(phone); },
+      onDismiss: () => setPaying(false),
+      onFailed: () => { setPaying(false); setError("That payment didn't go through. You can try again."); },
+    });
+    if (!opened) {
+      setPaying(false);
+      setError("Couldn't load the payment window. Check your connection and try again.");
+    }
+  }
 
   return (
     <div className="wrap page" style={{ maxWidth: 760 }}>
       <div className="page-head">
-        {isNew && !awaitingPayment && !awaitingQuote && !awaitingLinkPayment && (
+        {isNew && !awaitingPayment && !awaitingQuote && !payable && (
           <div className="success-mark" aria-hidden="true">✓</div>
         )}
         <p className="eyebrow">Order {order.public_id}</p>
@@ -88,6 +114,8 @@ export default function OrderPage() {
         )}
       </div>
 
+      {error && <div className="alert error" role="alert">{error}</div>}
+
       {awaitingQuote && (
         <div className="alert info">
           This address is outside our local delivery zone, so we ship it by courier. We&apos;re checking the
@@ -97,14 +125,15 @@ export default function OrderPage() {
         </div>
       )}
 
-      {awaitingLinkPayment && (
+      {payable && (
         <div className="alert info">
-          Your order is ready to ship{order.shipping_courier ? ` via ${order.shipping_courier}` : ""}! Pay{" "}
-          {rupees(order.total_paise)} to confirm dispatch.
+          {order.out_of_zone
+            ? <>Your order is ready to ship{order.shipping_courier ? ` via ${order.shipping_courier}` : ""}! Pay {rupees(order.total_paise)} to confirm dispatch.</>
+            : <>Your payment wasn&apos;t completed yet — pay {rupees(order.total_paise)} to confirm this order.</>}
           <div style={{ marginTop: "0.6rem" }}>
-            <a className="btn primary" href={order.razorpay_payment_link_url!} target="_blank" rel="noopener">
-              Pay {rupees(order.total_paise)} now
-            </a>
+            <button type="button" className="btn primary" disabled={paying} onClick={pay}>
+              {paying ? "Opening payment…" : `Pay ${rupees(order.total_paise)} now`}
+            </button>
           </div>
         </div>
       )}

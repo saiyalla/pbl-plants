@@ -35,6 +35,13 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.frontend_origins.split(",") if o.strip()]
 
     @property
+    def site_url(self) -> str:
+        """The customer-facing site, used to build links sent outside the browser (e.g. in a
+        WhatsApp message). Prefers an https origin over a plain-http dev one when both are listed."""
+        origins = self.origins
+        return next((o for o in origins if o.startswith("https://")), origins[0] if origins else "")
+
+    @property
     def online_payments_enabled(self) -> bool:
         return bool(self.razorpay_key_id and self.razorpay_key_secret)
 

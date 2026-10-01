@@ -133,6 +133,8 @@ export type OrderItem = {
   line_total_paise: number;
 };
 
+export type RazorpayCheckoutInfo = { key_id: string; razorpay_order_id: string; amount_paise: number; currency: string };
+
 export type Order = {
   public_id: string;
   customer_name: string;
@@ -146,9 +148,12 @@ export type Order = {
   total_paise: number;
   out_of_zone: boolean;
   shipping_courier: string | null;
-  razorpay_payment_link_url: string | null;
   items: OrderItem[];
   created_at: string;
+  /** Set only when there's something to pay right now (a fresh online order, or an out-of-zone
+   * order once the team has set the shipping charge) — opens the same Razorpay Checkout widget
+   * used at our own checkout, instead of a hosted Payment Link page. */
+  razorpay: RazorpayCheckoutInfo | null;
 };
 
 export type AdminOrder = Order & {
@@ -159,7 +164,6 @@ export type AdminOrder = Order & {
   notes: string;
   razorpay_order_id: string | null;
   razorpay_payment_id: string | null;
-  razorpay_payment_link_id: string | null;
   updated_at: string;
 };
 
@@ -171,7 +175,7 @@ export type ShippingQuoteResult = {
 
 export type OrderCreated = {
   order: Order;
-  razorpay: { key_id: string; razorpay_order_id: string; amount_paise: number; currency: string } | null;
+  razorpay: RazorpayCheckoutInfo | null;
 };
 
 // `||` (not `??`) on purpose: a blank env var in a hosting dashboard is an empty string,

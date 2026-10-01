@@ -87,10 +87,8 @@ def test_online_disabled_without_keys(client, settings):
     assert res.status_code == 503
 
 
-def test_payment_link_webhook_marks_out_of_zone_order_paid(client, admin_headers, monkeypatch):
-    monkeypatch.setattr(
-        admin_router, "create_payment_link", lambda **kw: {"id": "plink_TEST", "short_url": "https://rzp.io/i/test"}
-    )
+def test_webhook_marks_out_of_zone_order_paid(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(admin_router, "create_razorpay_order", lambda **kw: "order_COURIER1")
     client.post("/api/orders", json=order_payload(client, pincode="500081", payment_method="online"))
     oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
     client.post(
@@ -100,13 +98,7 @@ def test_payment_link_webhook_marks_out_of_zone_order_paid(client, admin_headers
     )
 
     raw = json.dumps(
-        {
-            "event": "payment_link.paid",
-            "payload": {
-                "payment_link": {"entity": {"id": "plink_TEST"}},
-                "payment": {"entity": {"id": "pay_LINK1"}},
-            },
-        }
+        {"event": "payment.captured", "payload": {"payment": {"entity": {"id": "pay_C1", "order_id": "order_COURIER1"}}}}
     ).encode()
     res = client.post(
         "/api/payments/webhook",
@@ -117,4 +109,4 @@ def test_payment_link_webhook_marks_out_of_zone_order_paid(client, admin_headers
 
     order = client.get("/api/admin/orders", headers=admin_headers).json()[0]
     assert order["payment_status"] == "paid"
-    assert order["razorpay_payment_id"] == "pay_LINK1"
+    assert order["razorpay_payment_id"] == "pay_C1"

@@ -193,13 +193,12 @@ class Order(Base):
     razorpay_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Set when the pincode isn't in our own delivery zones — we ship these by courier
-    # (DTDC/RTC) instead of our own team. The shipping charge is only known after the team
-    # gets a courier quote, so it's added later from the admin panel via a Razorpay Payment
-    # Link rather than being collected at checkout.
+    # instead of our own team. The shipping charge is only known after the team
+    # gets a courier quote, so it's added later from the admin panel, which creates a Razorpay
+    # order for cart + shipping (same mechanism as a normal online order) that the customer
+    # pays on their own order page.
     out_of_zone: Mapped[bool] = mapped_column(Boolean, default=False)
     shipping_courier: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    razorpay_payment_link_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    razorpay_payment_link_url: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

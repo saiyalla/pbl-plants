@@ -117,12 +117,18 @@ export default function AdminPage() {
   );
 }
 
+/** The order's own tracking/pay page — the phone number is appended so it loads straight away
+ * instead of asking the customer to type it in again. */
+function orderPayUrl(o: AdminOrder): string {
+  return `${window.location.origin}/order/${o.public_id}?phone=${o.phone}`;
+}
+
 /** Mirrors the message the backend builds when a shipping quote is created — used to rebuild
  * the WhatsApp link after a page reload, once the server's own one-time message is gone. */
 function courierWhatsappMessage(o: AdminOrder): string {
   const first = o.customer_name.split(" ")[0];
   const courierBit = o.shipping_courier ? ` via ${o.shipping_courier}` : "";
-  return `Hi ${first}, your PBL Plants order ${o.public_id} is ready to ship${courierBit}. Parcel + shipping total: ${rupees(o.total_paise)}. Pay here to dispatch: ${o.razorpay_payment_link_url}`;
+  return `Hi ${first}, your PBL Plants order ${o.public_id} is ready to ship${courierBit}. Parcel + shipping total: ${rupees(o.total_paise)}. Pay here to dispatch: ${orderPayUrl(o)}`;
 }
 
 function ShippingQuoteForm({ order, token, onDone }: { order: AdminOrder; token: string; onDone: (o: AdminOrder) => void }) {
@@ -147,7 +153,7 @@ function ShippingQuoteForm({ order, token, onDone }: { order: AdminOrder; token:
       onDone(result.order);
       window.open(result.whatsapp_url, "_blank");
     } catch (e) {
-      setErr(e instanceof ApiError ? e.message : "Couldn't create the payment link.");
+      setErr(e instanceof ApiError ? e.message : "Couldn't set the shipping charge.");
     } finally {
       setBusy(false);
     }
@@ -159,7 +165,7 @@ function ShippingQuoteForm({ order, token, onDone }: { order: AdminOrder; token:
       <div className="field-row">
         <div className="field" style={{ marginBottom: 0 }}>
           <label>Courier (optional)</label>
-          <input placeholder="DTDC / RTC" value={courier} onChange={(e) => setCourier(e.target.value)} />
+          <input placeholder="Courier name" value={courier} onChange={(e) => setCourier(e.target.value)} />
         </div>
         <div className="field" style={{ marginBottom: 0 }}>
           <label>Shipping charge (₹)</label>
@@ -167,7 +173,7 @@ function ShippingQuoteForm({ order, token, onDone }: { order: AdminOrder; token:
         </div>
       </div>
       <button className="btn primary" disabled={busy} style={{ marginTop: "0.6rem" }}>
-        {busy ? "Creating link…" : "Create payment link & message customer"}
+        {busy ? "Setting charge…" : "Set shipping charge & message customer"}
       </button>
     </form>
   );
@@ -199,10 +205,10 @@ function Orders({ token }: { token: string }) {
     try {
       const updated = await api<AdminOrder>(`/api/admin/orders/${o.id}/refresh-payment`, { method: "POST", token });
       setOrders((list) => list.map((x) => (x.id === o.id ? updated : x)));
-      if (updated.payment_status !== "paid") setError("Razorpay says this link hasn't been paid yet.");
+      if (updated.payment_status !== "paid") setError("Razorpay says this order hasn't been paid yet.");
       else setError(null);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't check the payment link.");
+      setError(e instanceof ApiError ? e.message : "Couldn't check the payment status.");
     } finally {
       setBusyId(null);
     }
@@ -273,7 +279,7 @@ function Orders({ token }: { token: string }) {
                 {o.notes && <p style={{ margin: "0.6rem 0 0", fontSize: "0.88rem" }}><strong>Note:</strong> {o.notes}</p>}
                 {o.out_of_zone && o.payment_status !== "paid" && (
                   <div className="courier-box">
-                    {!o.razorpay_payment_link_url ? (
+                    {!o.razorpay_order_id ? (
                       <ShippingQuoteForm
                         order={o}
                         token={token}
@@ -282,12 +288,12 @@ function Orders({ token }: { token: string }) {
                     ) : (
                       <div className="quote-sent">
                         <span className="muted" style={{ fontSize: "0.85rem" }}>
-                          Payment link sent{o.shipping_courier ? ` (${o.shipping_courier})` : ""} — {rupees(o.total_paise)} total.
+                          Customer notified{o.shipping_courier ? ` (${o.shipping_courier})` : ""} — {rupees(o.total_paise)} total.
                         </span>
                         <a className="btn ghost" href={`https://wa.me/91${o.phone}?text=${encodeURIComponent(courierWhatsappMessage(o))}`} target="_blank" rel="noopener">
                           Resend on WhatsApp
                         </a>
-                        <a className="btn ghost" href={o.razorpay_payment_link_url} target="_blank" rel="noopener">Open payment link</a>
+                        <a className="btn ghost" href={orderPayUrl(o)} target="_blank" rel="noopener">View order page</a>
                         <button className="btn ghost" disabled={busyId === o.id} onClick={() => refreshPayment(o)}>
                           {busyId === o.id ? "Checking…" : "Check payment status"}
                         </button>

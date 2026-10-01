@@ -64,28 +64,17 @@ async def razorpay_webhook(
 
     event = json.loads(raw)
     kind = event.get("event", "")
-    payload = event.get("payload", {})
-    payment = payload.get("payment", {}).get("entity", {})
-    payment_id = payment.get("id")
-
-    # Normal Checkout payments are matched by the Razorpay order id we created up front.
-    # Payment Link payments (out-of-zone courier orders) never have one of those — the link
-    # itself is what we stored — so they're matched by its id instead.
-    order = None
-    if kind == "payment_link.paid":
-        plink_id = payload.get("payment_link", {}).get("entity", {}).get("id")
-        if plink_id:
-            order = db.scalar(select(Order).where(Order.razorpay_payment_link_id == plink_id))
-    else:
-        rp_order_id = payment.get("order_id")
-        if rp_order_id:
-            order = db.scalar(select(Order).where(Order.razorpay_order_id == rp_order_id))
-
-    if order is None:
-        log.warning("Webhook %s: no matching order (payment %s)", kind, payment_id)
+    payment = event.get("payload", {}).get("payment", {}).get("entity", {})
+    rp_order_id, payment_id = payment.get("order_id"), payment.get("id")
+    if not rp_order_id:
         return {"ok": True, "ignored": kind}
 
-    if kind in ("payment.captured", "order.paid", "payment_link.paid"):
+    order = db.scalar(select(Order).where(Order.razorpay_order_id == rp_order_id))
+    if order is None:
+        log.warning("Webhook %s for unknown Razorpay order %s", kind, rp_order_id)
+        return {"ok": True, "ignored": "unknown order"}
+
+    if kind in ("payment.captured", "order.paid"):
         if mark_paid(db, order, payment_id):
             background.add_task(notify_team, order, "New PAID order")
     elif kind == "payment.failed" and order.payment_status == PaymentStatus.pending:

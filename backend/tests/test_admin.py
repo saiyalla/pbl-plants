@@ -1,5 +1,3 @@
-from urllib.parse import unquote
-
 from app.routers import admin as admin_router
 from app.routers import orders as orders_router
 from tests.conftest import order_payload, product_id
@@ -67,39 +65,34 @@ def test_price_edit_does_not_change_past_orders(client, admin_headers):
     assert past["items"][0]["unit_price_paise"] == 20000
 
 
-def test_shipping_quote_creates_payment_link_for_out_of_zone_order(client, admin_headers, monkeypatch):
-    monkeypatch.setattr(
-        admin_router, "create_payment_link", lambda **kw: {"id": "plink_TEST", "short_url": "https://rzp.io/i/test"}
-    )
+def test_shipping_quote_creates_razorpay_order_for_out_of_zone_order(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(admin_router, "create_razorpay_order", lambda **kw: "order_TEST")
     client.post("/api/orders", json=order_payload(client, pincode="500081", payment_method="online"))
     oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
 
     res = client.post(
         f"/api/admin/orders/{oid}/shipping-quote",
-        json={"shipping_fee_paise": 15000, "courier": "DTDC"},
+        json={"shipping_fee_paise": 15000, "courier": "Speedex"},
         headers=admin_headers,
     )
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["order"]["delivery_fee_paise"] == 15000
     assert body["order"]["total_paise"] == 55000  # ₹400 cart + ₹150 shipping
-    assert body["order"]["shipping_courier"] == "DTDC"
-    assert body["order"]["razorpay_payment_link_id"] == "plink_TEST"
-    assert body["order"]["razorpay_payment_link_url"] == "https://rzp.io/i/test"
+    assert body["order"]["shipping_courier"] == "Speedex"
+    assert body["order"]["razorpay_order_id"] == "order_TEST"
     assert body["order"]["payment_status"] == "pending"
-    assert "https://rzp.io/i/test" in unquote(body["whatsapp_url"])
+    assert body["order"]["public_id"] in body["whatsapp_url"]
 
 
 def test_refresh_payment_pulls_paid_status_from_razorpay(client, admin_headers, monkeypatch):
-    monkeypatch.setattr(
-        admin_router, "create_payment_link", lambda **kw: {"id": "plink_TEST", "short_url": "https://rzp.io/i/test"}
-    )
+    monkeypatch.setattr(admin_router, "create_razorpay_order", lambda **kw: "order_TEST")
     client.post("/api/orders", json=order_payload(client, pincode="500081", payment_method="online"))
     oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
     client.post(f"/api/admin/orders/{oid}/shipping-quote", json={"shipping_fee_paise": 15000}, headers=admin_headers)
 
     monkeypatch.setattr(
-        admin_router, "get_payment_link_status", lambda **kw: {"status": "paid", "payment_id": "pay_PULLED"}
+        admin_router, "get_order_payments", lambda **kw: [{"id": "pay_PULLED", "status": "captured"}]
     )
     res = client.post(f"/api/admin/orders/{oid}/refresh-payment", headers=admin_headers)
     assert res.status_code == 200, res.text
@@ -109,14 +102,12 @@ def test_refresh_payment_pulls_paid_status_from_razorpay(client, admin_headers, 
 
 
 def test_refresh_payment_leaves_order_unpaid_when_still_unpaid(client, admin_headers, monkeypatch):
-    monkeypatch.setattr(
-        admin_router, "create_payment_link", lambda **kw: {"id": "plink_TEST", "short_url": "https://rzp.io/i/test"}
-    )
+    monkeypatch.setattr(admin_router, "create_razorpay_order", lambda **kw: "order_TEST")
     client.post("/api/orders", json=order_payload(client, pincode="500081", payment_method="online"))
     oid = client.get("/api/admin/orders", headers=admin_headers).json()[0]["id"]
     client.post(f"/api/admin/orders/{oid}/shipping-quote", json={"shipping_fee_paise": 15000}, headers=admin_headers)
 
-    monkeypatch.setattr(admin_router, "get_payment_link_status", lambda **kw: {"status": "created", "payment_id": None})
+    monkeypatch.setattr(admin_router, "get_order_payments", lambda **kw: [{"id": "pay_X", "status": "created"}])
     res = client.post(f"/api/admin/orders/{oid}/refresh-payment", headers=admin_headers)
     assert res.status_code == 200
     assert res.json()["payment_status"] == "pending"

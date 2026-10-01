@@ -114,7 +114,7 @@ def build_order(db: Session, data: OrderCreate, settings: Settings) -> Order:
     # threshold; it's recomputed exactly below once server-side prices are resolved.
     delivery = compute_delivery(db, data.pincode, subtotal_paise=0)
     # Pincodes outside our own delivery zones aren't refused — they're shipped by courier
-    # (DTDC/RTC) instead. The exact parcel charge only comes once the team gets a courier
+    # instead. The exact parcel charge only comes once the team gets a courier
     # quote, so it can't be collected at checkout: COD is impossible (no team visit to collect
     # cash) and online payment for the balance happens later via a link sent after packing.
     out_of_zone = not delivery.deliverable
