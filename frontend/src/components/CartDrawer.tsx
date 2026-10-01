@@ -6,7 +6,7 @@ import { api, type Product, rupees } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { Icon } from "./Icons";
 
-function Suggestions() {
+export function Suggestions() {
   const { add } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
 

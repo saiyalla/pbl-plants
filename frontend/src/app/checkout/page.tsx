@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { Suggestions } from "@/components/CartDrawer";
 import { fieldClass, FieldError } from "@/components/FieldError";
 import { Icon } from "@/components/Icons";
 import {
@@ -21,7 +22,9 @@ import { payWithRazorpay } from "@/lib/razorpay";
 import { clearCheckoutDraft, loadCheckoutDraft, rememberOrderPhone, saveCheckoutDraft } from "@/lib/tracking";
 
 type Delivery = {
-  state: "idle" | "checking" | "ok" | "no";
+  // "ok": a known zone, priced now. "pending": looks like Vizag but not a known zone yet —
+  // our own team still delivers it, fee confirmed after ordering. "no": ships by courier.
+  state: "idle" | "checking" | "ok" | "pending" | "no";
   feePaise: number;
   baseFeePaise: number;
   freeDeliveryMinPaise: number;
@@ -34,7 +37,7 @@ type AppliedCoupon = { code: string; discountPaise: number };
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { lines, clear, subtotalPaise } = useCart();
+  const { lines, clear, subtotalPaise, setQuantity, remove } = useCart();
 
   const [form, setForm] = useState({ customer_name: "", phone: "", address: "", pincode: "", notes: "" });
   const [draftLoaded, setDraftLoaded] = useState(false);
@@ -103,10 +106,11 @@ export default function CheckoutPage() {
       api<DeliveryCheckResult>(`/api/delivery/check?pincode=${form.pincode}&subtotal_paise=${subtotalPaise}`)
         .then((r) => {
           setDelivery({
-            state: r.deliverable ? "ok" : "no", feePaise: r.delivery_fee_paise, baseFeePaise: r.base_fee_paise,
+            state: r.deliverable ? "ok" : r.pending_zone ? "pending" : "no",
+            feePaise: r.delivery_fee_paise, baseFeePaise: r.base_fee_paise,
             freeDeliveryMinPaise: r.free_delivery_min_paise, distanceKm: r.distance_km, codAllowed: r.cod_allowed,
           });
-          // Outside our own delivery zones: courier only, so cash on delivery is never an option.
+          // Outside a known zone (courier or pending confirmation): cash on delivery isn't an option yet.
           if (!r.deliverable) setMethod("online");
           else if (!r.cod_allowed) setMethod("online");
           else setMethod("cod");
@@ -236,7 +240,7 @@ export default function CheckoutPage() {
     e.preventDefault();
     setError(null);
     if (!validate()) return;
-    if (delivery.state !== "ok" && delivery.state !== "no") {
+    if (!["ok", "no", "pending"].includes(delivery.state)) {
       setError("Enter your pincode to continue.");
       return;
     }
@@ -264,11 +268,12 @@ export default function CheckoutPage() {
 
   if (lines.length === 0 && !pending) {
     return (
-      <div className="wrap page">
+      <div className="wrap page" style={{ maxWidth: 520 }}>
         <div className="page-head"><h1>Checkout</h1></div>
         <div className="empty">
           Your cart is empty. <Link href="/#catalog">Browse the shop</Link> to add plants.
         </div>
+        <Suggestions />
       </div>
     );
   }
@@ -307,6 +312,9 @@ export default function CheckoutPage() {
                   ✓ We deliver here{delivery.distanceKm != null ? ` · ${delivery.distanceKm} km away` : ""}
                 </span>
               )}
+              {!fieldErrors.pincode && delivery.state === "pending" && (
+                <span className="hint ok">✓ We deliver here — confirming your exact charge</span>
+              )}
               {!fieldErrors.pincode && delivery.state === "no" && (
                 <span className="hint">Outside our delivery zone — we&apos;ll ship this by courier</span>
               )}
@@ -322,7 +330,7 @@ export default function CheckoutPage() {
             <textarea id="notes" rows={2} maxLength={500} placeholder="e.g. 3-layer bamboo please, gift wrap, call before coming" value={form.notes} onChange={set("notes")} />
           </div>
 
-          {delivery.state !== "ok" && delivery.state !== "no" ? (
+          {!["ok", "no", "pending"].includes(delivery.state) ? (
             <div className="alert info" style={{ marginTop: "1.2rem" }}>
               Enter your pincode above to see delivery &amp; payment options.
             </div>
@@ -334,6 +342,11 @@ export default function CheckoutPage() {
                   This address is outside our local delivery zone — we ship it by courier and
                   confirm the exact shipping charge after you order.
                 </p>
+              ) : delivery.state === "pending" ? (
+                <p className="muted" style={{ fontSize: "0.85rem", marginTop: "-0.4rem" }}>
+                  We deliver here! We&apos;re just confirming the exact delivery charge for this
+                  address — your order still goes to our own delivery team.
+                </p>
               ) : (
                 !delivery.codAllowed && (
                   <p className="muted" style={{ fontSize: "0.85rem", marginTop: "-0.4rem" }}>
@@ -342,7 +355,7 @@ export default function CheckoutPage() {
                 )
               )}
               <div className="pay-options">
-                {delivery.state !== "no" && (
+                {delivery.state === "ok" && (
                   <label className={`pay-option${delivery.codAllowed ? "" : " disabled"}`}>
                     <input type="radio" name="pay" disabled={!delivery.codAllowed} checked={method === "cod"} onChange={() => setMethod("cod")} />
                     <div><strong>Cash on delivery</strong><span>Pay cash or UPI to our delivery team at your door.</span></div>
@@ -355,18 +368,18 @@ export default function CheckoutPage() {
                     <span>
                       {!onlineEnabled
                         ? "Coming soon."
-                        : delivery.state === "no"
-                          ? "We'll send a secure payment link once shipping is confirmed."
+                        : delivery.state === "no" || delivery.state === "pending"
+                          ? "We'll send a secure payment link once the charge is confirmed."
                           : "UPI, cards and netbanking via Razorpay."}
                     </span>
                   </div>
                 </label>
               </div>
 
-              {(delivery.state === "no" ? !onlineEnabled : !delivery.codAllowed && !onlineEnabled) ? (
+              {(delivery.state === "no" || delivery.state === "pending" ? !onlineEnabled : !delivery.codAllowed && !onlineEnabled) ? (
                 <div className="alert error" style={{ marginTop: "1.2rem" }}>
-                  {delivery.state === "no"
-                    ? "This address needs a courier and online payment, and online payment isn't set up yet — message us on WhatsApp and we'll help."
+                  {delivery.state === "no" || delivery.state === "pending"
+                    ? "This address needs online payment to confirm, and online payment isn't set up yet — message us on WhatsApp and we'll help."
                     : "We can't take online payments yet, and cash on delivery isn't available this far. Message us on WhatsApp and we'll help you place the order."}
                 </div>
               ) : pending ? (
@@ -378,14 +391,14 @@ export default function CheckoutPage() {
                   <button type="submit" className="btn primary block" style={{ marginTop: "1.2rem" }} disabled={busy || problems.length > 0}>
                     {busy
                       ? "Placing order…"
-                      : delivery.state === "no"
-                        ? `Place order · ${rupees(total)} + shipping`
+                      : delivery.state === "no" || delivery.state === "pending"
+                        ? `Place order · ${rupees(total)} + delivery`
                         : method === "online" ? `Pay ${rupees(total)}` : `Place order · ${rupees(total)}`}
                   </button>
-                  {delivery.state === "no" && (
+                  {(delivery.state === "no" || delivery.state === "pending") && (
                     <p className="muted" style={{ fontSize: "0.8rem", marginTop: "0.6rem" }}>
-                      We&apos;ll confirm the courier charge and send a secure payment link on WhatsApp before
-                      dispatch — nothing is charged yet.
+                      We&apos;ll confirm the exact charge and send a secure payment link on WhatsApp
+                      before dispatch — nothing is charged yet.
                     </p>
                   )}
                 </>
@@ -407,7 +420,15 @@ export default function CheckoutPage() {
               <div className="line-thumb"><Icon name={l.icon} /></div>
               <div>
                 <div className="line-name">{l.name}</div>
-                <div className="line-price">{l.quantity} × {rupees(l.pricePaise)}</div>
+                <div className="line-price">{rupees(l.pricePaise)} each</div>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <div className="qty">
+                    <button type="button" onClick={() => setQuantity(l.productId, l.quantity - 1)} aria-label={`One fewer ${l.name}`}>−</button>
+                    <span aria-live="polite">{l.quantity}</span>
+                    <button type="button" onClick={() => setQuantity(l.productId, l.quantity + 1)} aria-label={`One more ${l.name}`} disabled={l.quantity >= 20}>+</button>
+                  </div>
+                  <button type="button" className="link-btn" onClick={() => remove(l.productId)}>Remove</button>
+                </div>
               </div>
               <div className="line-total">{rupees(l.pricePaise * l.quantity)}</div>
             </div>
@@ -456,7 +477,7 @@ export default function CheckoutPage() {
             <div className="sum-row">
               <span>Delivery</span>
               <span>
-                {delivery.state === "no" ? "Confirmed after ordering" : delivery.state !== "ok" ? "—" : delivery.feePaise === 0 && delivery.baseFeePaise > 0 ? (
+                {delivery.state === "no" || delivery.state === "pending" ? "Confirmed after ordering" : delivery.state !== "ok" ? "—" : delivery.feePaise === 0 && delivery.baseFeePaise > 0 ? (
                   <>
                     <span style={{ textDecoration: "line-through", opacity: 0.6, marginRight: "0.4rem" }}>
                       {rupees(delivery.baseFeePaise)}
@@ -466,7 +487,7 @@ export default function CheckoutPage() {
                 ) : delivery.feePaise ? rupees(delivery.feePaise) : "Free"}
               </span>
             </div>
-            <div className="sum-row total"><span>Total</span><span>{rupees(total)}{delivery.state === "no" ? " + shipping" : ""}</span></div>
+            <div className="sum-row total"><span>Total</span><span>{rupees(total)}{delivery.state === "no" || delivery.state === "pending" ? " + delivery" : ""}</span></div>
           </div>
         </aside>
       </div>
